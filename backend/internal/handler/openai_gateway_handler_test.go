@@ -1030,8 +1030,25 @@ func (s *openAIWSUsageHandlerAccountRepoStub) ListSchedulableByPlatform(ctx cont
 	return []service.Account{s.account}, nil
 }
 
+func (s *openAIWSUsageHandlerAccountRepoStub) ListSchedulableByPlatforms(ctx context.Context, platforms []string) ([]service.Account, error) {
+	for _, platform := range platforms {
+		if s.account.Platform == platform {
+			return []service.Account{s.account}, nil
+		}
+	}
+	return nil, nil
+}
+
 func (s *openAIWSUsageHandlerAccountRepoStub) ListSchedulableByGroupIDAndPlatform(ctx context.Context, groupID int64, platform string) ([]service.Account, error) {
 	return s.ListSchedulableByPlatform(ctx, platform)
+}
+
+func (s *openAIWSUsageHandlerAccountRepoStub) ListSchedulableByGroupIDAndPlatforms(ctx context.Context, groupID int64, platforms []string) ([]service.Account, error) {
+	return s.ListSchedulableByPlatforms(ctx, platforms)
+}
+
+func (s *openAIWSUsageHandlerAccountRepoStub) ListSchedulableUngroupedByPlatforms(ctx context.Context, platforms []string) ([]service.Account, error) {
+	return s.ListSchedulableByPlatforms(ctx, platforms)
 }
 
 func (s *openAIWSUsageHandlerAccountRepoStub) GetByID(ctx context.Context, id int64) (*service.Account, error) {
