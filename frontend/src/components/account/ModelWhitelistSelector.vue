@@ -81,9 +81,10 @@
       <button
         type="button"
         @click="fillRelated"
-        class="rounded-lg border border-blue-200 px-3 py-1.5 text-sm text-blue-600 hover:bg-blue-50 dark:border-blue-800 dark:text-blue-400 dark:hover:bg-blue-900/30"
+        :disabled="syncingNvidiaModels"
+        class="rounded-lg border border-blue-200 px-3 py-1.5 text-sm text-blue-600 hover:bg-blue-50 disabled:cursor-not-allowed disabled:opacity-60 dark:border-blue-800 dark:text-blue-400 dark:hover:bg-blue-900/30"
       >
-        {{ t('admin.accounts.fillRelatedModels') }}
+        {{ syncingNvidiaModels ? t('admin.accounts.syncingModels') : t('admin.accounts.fillRelatedModels') }}
       </button>
       <button
         type="button"
@@ -126,6 +127,7 @@ import { useAppStore } from '@/stores/app'
 import ModelIcon from '@/components/common/ModelIcon.vue'
 import Icon from '@/components/icons/Icon.vue'
 import { allModels, getModelsByPlatform } from '@/composables/useModelWhitelist'
+import { adminAPI } from '@/api/admin'
 
 const { t } = useI18n()
 
@@ -133,6 +135,9 @@ const props = defineProps<{
   modelValue: string[]
   platform?: string
   platforms?: string[]
+  accountId?: number | null
+  baseUrl?: string
+  apiKey?: string
 }>()
 
 const emit = defineEmits<{
@@ -145,6 +150,7 @@ const showDropdown = ref(false)
 const searchQuery = ref('')
 const customModel = ref('')
 const isComposing = ref(false)
+const syncingNvidiaModels = ref(false)
 const normalizedPlatforms = computed(() => {
   const rawPlatforms =
     props.platforms && props.platforms.length > 0
@@ -218,6 +224,14 @@ const handleEnter = () => {
 }
 
 const fillRelated = () => {
+  if (normalizedPlatforms.value.includes('nvidia')) {
+    void syncNvidiaAndFill()
+    return
+  }
+  fillModelsFromPlatforms()
+}
+
+const fillModelsFromPlatforms = () => {
   const newModels = [...props.modelValue]
   for (const platform of normalizedPlatforms.value) {
     for (const model of getModelsByPlatform(platform)) {
@@ -227,6 +241,38 @@ const fillRelated = () => {
     }
   }
   emit('update:modelValue', newModels)
+}
+
+const syncNvidiaAndFill = async () => {
+  const canUseSavedAccount = typeof props.accountId === 'number' && props.accountId > 0
+  const apiKey = props.apiKey?.trim() || undefined
+  if (!canUseSavedAccount && !apiKey) {
+    appStore.showWarning(t('admin.accounts.nvidiaApiKeyRequiredForSync'))
+    fillModelsFromPlatforms()
+    return
+  }
+
+  syncingNvidiaModels.value = true
+  try {
+    const models = await adminAPI.accounts.syncNvidiaModels({
+      account_id: props.accountId || undefined,
+      base_url: props.baseUrl?.trim() || undefined,
+      api_key: apiKey
+    })
+    const newModels = [...props.modelValue]
+    for (const model of models) {
+      const id = model.id?.trim()
+      if (id && !newModels.includes(id)) {
+        newModels.push(id)
+      }
+    }
+    emit('update:modelValue', newModels)
+  } catch (error: any) {
+    appStore.showError(error?.message || t('admin.accounts.nvidiaModelsSyncFailed'))
+    fillModelsFromPlatforms()
+  } finally {
+    syncingNvidiaModels.value = false
+  }
 }
 
 const clearAll = () => {

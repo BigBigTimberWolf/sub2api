@@ -1,7 +1,8 @@
 import { describe, expect, it, vi } from 'vitest'
 
 vi.mock('@/api/admin/accounts', () => ({
-  getAntigravityDefaultModelMapping: vi.fn()
+  getAntigravityDefaultModelMapping: vi.fn(),
+  syncNvidiaModels: vi.fn()
 }))
 
 import { buildModelMappingObject, getModelsByPlatform } from '../useModelWhitelist'
@@ -72,5 +73,12 @@ describe('useModelWhitelist', () => {
     expect(mapping).toEqual({
       'gpt-5.4-mini': 'gpt-5.4-mini'
     })
+  })
+
+  it('nvidia models do not fall back to Claude models', () => {
+    const models = getModelsByPlatform('nvidia')
+
+    expect(models).toContain('meta/llama-3.1-8b-instruct')
+    expect(models).not.toContain('claude-sonnet-4-20250514')
   })
 })

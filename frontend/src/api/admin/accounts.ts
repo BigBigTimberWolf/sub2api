@@ -446,6 +446,17 @@ export async function getAvailableModels(id: number): Promise<ClaudeModel[]> {
   return data
 }
 
+export interface SyncNvidiaModelsRequest {
+  account_id?: number | null
+  base_url?: string
+  api_key?: string
+}
+
+export async function syncNvidiaModels(request: SyncNvidiaModelsRequest): Promise<ClaudeModel[]> {
+  const { data } = await apiClient.post<ClaudeModel[]>('/admin/accounts/nvidia/models', request)
+  return data
+}
+
 export interface CRSPreviewAccount {
   crs_account_id: string
   kind: string
@@ -660,6 +671,7 @@ export const accountsAPI = {
   resetTempUnschedulable,
   setSchedulable,
   getAvailableModels,
+  syncNvidiaModels,
   generateAuthUrl,
   exchangeCode,
   refreshOpenAIToken,

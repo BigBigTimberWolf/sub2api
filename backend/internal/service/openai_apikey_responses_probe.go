@@ -65,8 +65,8 @@ func (s *AccountTestService) ProbeOpenAIAPIKeyResponsesSupport(ctx context.Conte
 		logger.LegacyPrintf("service.openai_probe", "probe_load_account_failed: account_id=%d err=%v", accountID, err)
 		return
 	}
-	if !account.IsOpenAICompatibleAPIKey() {
-		// 仅 OpenAI-compatible API Key 账号需要探测；其他账号类型无能力差异。
+	if !account.IsOpenAIApiKey() {
+		// 仅真实 OpenAI API Key 账号需要探测；NVIDIA 等兼容平台使用 Chat Completions。
 		return
 	}
 

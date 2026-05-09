@@ -45,6 +45,15 @@ const geminiModels = [
   'gemini-3-pro-preview'
 ]
 
+// NVIDIA NIM OpenAI-compatible models. The admin UI can sync the latest list
+// from NVIDIA /v1/models; this list is only a local fallback.
+export const nvidiaModels = [
+  'meta/llama-3.1-8b-instruct',
+  'meta/llama-3.1-70b-instruct',
+  'meta/llama-3.3-70b-instruct',
+  'nvidia/llama-3.1-nemotron-70b-instruct'
+]
+
 // Antigravity 官方支持的模型（精确匹配）
 // 基于官方 API 返回的模型列表，只支持 Claude 4.5+ 和 Gemini 2.5+
 const antigravityModels = [
@@ -205,6 +214,7 @@ const perplexityModels = [
 const allModelsList: string[] = [
   ...openaiModels,
   ...claudeModels,
+  ...nvidiaModels,
   ...geminiModels,
   ...zhipuModels,
   ...qwenModels,
@@ -350,6 +360,7 @@ export const commonErrorCodes = [
 export function getModelsByPlatform(platform: string): string[] {
   switch (platform) {
     case 'openai': return openaiModels
+    case 'nvidia': return nvidiaModels
     case 'anthropic':
     case 'claude': return claudeModels
     case 'gemini': return geminiModels
@@ -376,6 +387,7 @@ export function getModelsByPlatform(platform: string): string[] {
 // 按平台获取预设映射
 export function getPresetMappingsByPlatform(platform: string) {
   if (platform === 'openai') return openaiPresetMappings
+  if (platform === 'nvidia') return []
   if (platform === 'gemini') return geminiPresetMappings
   if (platform === 'antigravity') return antigravityPresetMappings
   if (platform === 'bedrock') return bedrockPresetMappings

@@ -8,6 +8,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"log"
 	"log/slog"
 	"net/http"
@@ -661,7 +662,7 @@ func (h *AccountHandler) Update(c *gin.Context) {
 // 当前请求。探测错误仅记录日志，不向上下文传播：探测失败时标记保持缺失，
 // 网关会按"现状即证据"默认走 Responses。
 func (h *AccountHandler) scheduleOpenAIResponsesProbe(account *service.Account) {
-	if account == nil || !account.IsOpenAICompatibleAPIKey() {
+	if account == nil || !account.IsOpenAIApiKey() {
 		return
 	}
 	if h.accountTestService == nil {
@@ -703,6 +704,12 @@ type TestAccountRequest struct {
 	Mode    string `json:"mode"`
 }
 
+type SyncNvidiaModelsRequest struct {
+	AccountID *int64 `json:"account_id"`
+	BaseURL   string `json:"base_url"`
+	APIKey    string `json:"api_key"`
+}
+
 type SyncFromCRSRequest struct {
 	BaseURL            string   `json:"base_url" binding:"required"`
 	Username           string   `json:"username" binding:"required"`
@@ -741,6 +748,42 @@ func (h *AccountHandler) Test(c *gin.Context) {
 			_ = c.Error(err)
 		}
 	}
+}
+
+// SyncNvidiaModels handles fetching latest NVIDIA-supported models.
+// POST /api/v1/admin/accounts/nvidia/models
+func (h *AccountHandler) SyncNvidiaModels(c *gin.Context) {
+	if h.accountTestService == nil {
+		response.Error(c, http.StatusServiceUnavailable, "Account test service unavailable")
+		return
+	}
+
+	var req SyncNvidiaModelsRequest
+	if err := c.ShouldBindJSON(&req); err != nil && err != io.EOF {
+		response.BadRequest(c, "Invalid request: "+err.Error())
+		return
+	}
+
+	var account *service.Account
+	if req.AccountID != nil && *req.AccountID > 0 {
+		var err error
+		account, err = h.adminService.GetAccount(c.Request.Context(), *req.AccountID)
+		if err != nil {
+			response.NotFound(c, "Account not found")
+			return
+		}
+		if account.Platform != service.PlatformNvidia {
+			response.BadRequest(c, "Only NVIDIA accounts support this operation")
+			return
+		}
+	}
+
+	models, err := h.accountTestService.FetchNvidiaModels(c.Request.Context(), account, req.BaseURL, req.APIKey)
+	if err != nil {
+		response.Error(c, http.StatusBadGateway, err.Error())
+		return
+	}
+	response.Success(c, models)
 }
 
 // RecoverState handles unified recovery of recoverable account runtime state.
@@ -1871,6 +1914,11 @@ func (h *AccountHandler) GetAvailableModels(c *gin.Context) {
 	}
 
 	// Handle OpenAI-compatible accounts
+	if account.Platform == service.PlatformNvidia {
+		response.Success(c, service.NvidiaModelsFromMapping(account.GetModelMapping()))
+		return
+	}
+
 	if account.IsOpenAICompatible() {
 		// OpenAI 自动透传会绕过常规模型改写，测试/模型列表也应回落到默认模型集。
 		if account.IsOpenAIPassthroughEnabled() {
