@@ -465,6 +465,11 @@ func (s *SchedulerSnapshotService) rebuildByAccount(ctx context.Context, account
 	if err := s.rebuildBucketsForPlatform(ctx, account.Platform, groupIDs, reason, seen); err != nil && firstErr == nil {
 		firstErr = err
 	}
+	if account.Platform == PlatformNvidia {
+		if err := s.rebuildBucketsForPlatform(ctx, PlatformOpenAI, groupIDs, reason, seen); err != nil && firstErr == nil {
+			firstErr = err
+		}
+	}
 	if account.Platform == PlatformAntigravity && account.IsMixedSchedulingEnabled() {
 		if err := s.rebuildBucketsForPlatform(ctx, PlatformAnthropic, groupIDs, reason, seen); err != nil && firstErr == nil {
 			firstErr = err
@@ -664,6 +669,17 @@ func (s *SchedulerSnapshotService) loadAccountsFromDB(ctx context.Context, bucke
 			filtered = append(filtered, acc)
 		}
 		return filtered, nil
+	}
+
+	if bucket.Platform == PlatformOpenAI {
+		platforms := []string{PlatformOpenAI, PlatformNvidia}
+		if groupID > 0 {
+			return s.accountRepo.ListSchedulableByGroupIDAndPlatforms(ctx, groupID, platforms)
+		}
+		if s.isRunModeSimple() {
+			return s.accountRepo.ListSchedulableByPlatforms(ctx, platforms)
+		}
+		return s.accountRepo.ListSchedulableUngroupedByPlatforms(ctx, platforms)
 	}
 
 	if groupID > 0 {

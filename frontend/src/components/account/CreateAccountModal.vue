@@ -111,6 +111,19 @@
           </button>
           <button
             type="button"
+            @click="form.platform = 'nvidia'"
+            :class="[
+              'flex flex-1 items-center justify-center gap-2 rounded-md px-4 py-2.5 text-sm font-medium transition-all',
+              form.platform === 'nvidia'
+                ? 'bg-white text-lime-600 shadow-sm dark:bg-dark-600 dark:text-lime-300'
+                : 'text-gray-600 hover:text-gray-900 dark:text-gray-400 dark:hover:text-gray-200'
+            ]"
+          >
+            <Icon name="cpu" size="sm" />
+            Nvidia
+          </button>
+          <button
+            type="button"
             @click="form.platform = 'gemini'"
             :class="[
               'flex flex-1 items-center justify-center gap-2 rounded-md px-4 py-2.5 text-sm font-medium transition-all',
@@ -281,10 +294,11 @@
       </div>
 
       <!-- Account Type Selection (OpenAI) -->
-      <div v-if="form.platform === 'openai'">
+      <div v-if="form.platform === 'openai' || form.platform === 'nvidia'">
         <label class="input-label">{{ t('admin.accounts.accountType') }}</label>
-        <div class="mt-2 grid grid-cols-2 gap-3" data-tour="account-form-type">
+        <div class="mt-2 grid gap-3" :class="form.platform === 'openai' ? 'grid-cols-2' : 'grid-cols-1'" data-tour="account-form-type">
           <button
+            v-if="form.platform === 'openai'"
             type="button"
             @click="accountCategory = 'oauth-based'"
             :class="[
@@ -316,15 +330,21 @@
             :class="[
               'flex items-center gap-3 rounded-lg border-2 p-3 text-left transition-all',
               accountCategory === 'apikey'
-                ? 'border-purple-500 bg-purple-50 dark:bg-purple-900/20'
-                : 'border-gray-200 hover:border-purple-300 dark:border-dark-600 dark:hover:border-purple-700'
+                ? form.platform === 'nvidia'
+                  ? 'border-lime-500 bg-lime-50 dark:bg-lime-900/20'
+                  : 'border-purple-500 bg-purple-50 dark:bg-purple-900/20'
+                : form.platform === 'nvidia'
+                  ? 'border-gray-200 hover:border-lime-300 dark:border-dark-600 dark:hover:border-lime-700'
+                  : 'border-gray-200 hover:border-purple-300 dark:border-dark-600 dark:hover:border-purple-700'
             ]"
           >
             <div
               :class="[
                 'flex h-8 w-8 shrink-0 items-center justify-center rounded-lg',
                 accountCategory === 'apikey'
-                  ? 'bg-purple-500 text-white'
+                  ? form.platform === 'nvidia'
+                    ? 'bg-lime-500 text-white'
+                    : 'bg-purple-500 text-white'
                   : 'bg-gray-100 text-gray-500 dark:bg-dark-600 dark:text-gray-400'
               ]"
             >
@@ -332,10 +352,18 @@
             </div>
             <div>
               <span class="block text-sm font-medium text-gray-900 dark:text-white">API Key</span>
-              <span class="text-xs text-gray-500 dark:text-gray-400">{{ t('admin.accounts.types.responsesApi') }}</span>
+              <span class="text-xs text-gray-500 dark:text-gray-400">
+                {{ form.platform === 'nvidia' ? 'OpenAI Compatible API' : t('admin.accounts.types.responsesApi') }}
+              </span>
             </div>
           </button>
 
+        </div>
+        <div
+          v-if="form.platform === 'nvidia'"
+          class="mt-3 rounded-lg border border-lime-200 bg-lime-50 px-3 py-2 text-xs text-lime-800 dark:border-lime-800/40 dark:bg-lime-900/20 dark:text-lime-200"
+        >
+          <p>使用 NVIDIA Build API Key 创建账号，调用端仍按 OpenAI 方式接入。</p>
         </div>
       </div>
 
@@ -1019,6 +1047,8 @@
             :placeholder="
               form.platform === 'openai'
                 ? 'https://api.openai.com'
+                : form.platform === 'nvidia'
+                  ? 'https://integrate.api.nvidia.com/v1'
                 : form.platform === 'gemini'
                   ? 'https://generativelanguage.googleapis.com'
                   : 'https://api.anthropic.com'
@@ -1036,6 +1066,8 @@
             :placeholder="
               form.platform === 'openai'
                 ? 'sk-proj-...'
+                : form.platform === 'nvidia'
+                  ? 'nvapi-...'
                 : form.platform === 'gemini'
                   ? 'AIza...'
                   : 'sk-ant-...'
@@ -3165,6 +3197,7 @@ const authStore = useAuthStore()
 
 const oauthStepTitle = computed(() => {
   if (form.platform === 'openai') return t('admin.accounts.oauth.openai.title')
+  if (form.platform === 'nvidia') return 'NVIDIA API Key'
   if (form.platform === 'gemini') return t('admin.accounts.oauth.gemini.title')
   if (form.platform === 'antigravity') return t('admin.accounts.oauth.antigravity.title')
   return t('admin.accounts.oauth.title')
@@ -3173,12 +3206,14 @@ const oauthStepTitle = computed(() => {
 // Platform-specific hints for API Key type
 const baseUrlHint = computed(() => {
   if (form.platform === 'openai') return t('admin.accounts.openai.baseUrlHint')
+  if (form.platform === 'nvidia') return '默认使用 NVIDIA OpenAI-compatible 地址：https://integrate.api.nvidia.com/v1'
   if (form.platform === 'gemini') return t('admin.accounts.gemini.baseUrlHint')
   return t('admin.accounts.baseUrlHint')
 })
 
 const apiKeyHint = computed(() => {
   if (form.platform === 'openai') return t('admin.accounts.openai.apiKeyHint')
+  if (form.platform === 'nvidia') return '填写 NVIDIA Build 平台生成的 API Key'
   if (form.platform === 'gemini') return t('admin.accounts.gemini.apiKeyHint')
   return t('admin.accounts.apiKeyHint')
 })
@@ -3571,6 +3606,10 @@ watch(
 watch(
   [accountCategory, addMethod, antigravityAccountType, () => form.platform],
   ([category, method, agType]) => {
+    if (form.platform === 'nvidia') {
+      form.type = 'apikey'
+      return
+    }
     // Antigravity upstream 类型（实际创建为 apikey）
     if (form.platform === 'antigravity' && agType === 'upstream') {
       form.type = 'apikey'
@@ -3600,6 +3639,8 @@ watch(
     apiKeyBaseUrl.value =
       (newPlatform === 'openai')
         ? 'https://api.openai.com'
+        : newPlatform === 'nvidia'
+          ? 'https://integrate.api.nvidia.com/v1'
         : newPlatform === 'gemini'
           ? 'https://generativelanguage.googleapis.com'
           : 'https://api.anthropic.com'
@@ -3626,6 +3667,9 @@ watch(
     }
     if (newPlatform !== 'anthropic' && accountCategory.value === 'bedrock') {
       accountCategory.value = 'oauth-based'
+    }
+    if (newPlatform === 'nvidia') {
+      accountCategory.value = 'apikey'
     }
     // Reset Bedrock fields when switching platforms
     bedrockAccessKeyId.value = ''
@@ -4389,6 +4433,8 @@ const handleSubmit = async () => {
   const defaultBaseUrl =
     form.platform === 'openai'
       ? 'https://api.openai.com'
+      : form.platform === 'nvidia'
+        ? 'https://integrate.api.nvidia.com/v1'
       : form.platform === 'gemini'
         ? 'https://generativelanguage.googleapis.com'
         : 'https://api.anthropic.com'

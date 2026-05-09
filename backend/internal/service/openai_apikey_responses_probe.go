@@ -47,7 +47,7 @@ func openaiResponsesProbePayload(modelID string) []byte {
 // ProbeOpenAIAPIKeyResponsesSupport 探测 OpenAI APIKey 账号上游是否支持
 // /v1/responses 端点，并将结果持久化到 accounts.extra.openai_responses_supported。
 //
-// 调用时机：账号创建/更新后，且仅当 platform=openai && type=apikey 时。
+// 调用时机：账号创建/更新后，且仅当 OpenAI-compatible API Key 账号时。
 //
 // 探测策略（参见包文档 internal/pkg/openai_compat）：
 //   - 上游 404 / 405 → 不支持，写 false
@@ -65,8 +65,8 @@ func (s *AccountTestService) ProbeOpenAIAPIKeyResponsesSupport(ctx context.Conte
 		logger.LegacyPrintf("service.openai_probe", "probe_load_account_failed: account_id=%d err=%v", accountID, err)
 		return
 	}
-	if account.Platform != PlatformOpenAI || account.Type != AccountTypeAPIKey {
-		// 仅 OpenAI APIKey 账号需要探测；其他账号类型无能力差异。
+	if !account.IsOpenAICompatibleAPIKey() {
+		// 仅 OpenAI-compatible API Key 账号需要探测；其他账号类型无能力差异。
 		return
 	}
 

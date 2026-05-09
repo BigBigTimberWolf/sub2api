@@ -75,8 +75,30 @@ func (r stubOpenAIAccountRepo) ListSchedulableByPlatform(ctx context.Context, pl
 	return result, nil
 }
 
+func (r stubOpenAIAccountRepo) ListSchedulableByPlatforms(ctx context.Context, platforms []string) ([]Account, error) {
+	allowed := make(map[string]struct{}, len(platforms))
+	for _, platform := range platforms {
+		allowed[platform] = struct{}{}
+	}
+	var result []Account
+	for _, acc := range r.accounts {
+		if _, ok := allowed[acc.Platform]; ok {
+			result = append(result, acc)
+		}
+	}
+	return result, nil
+}
+
 func (r stubOpenAIAccountRepo) ListSchedulableUngroupedByPlatform(ctx context.Context, platform string) ([]Account, error) {
 	return r.ListSchedulableByPlatform(ctx, platform)
+}
+
+func (r stubOpenAIAccountRepo) ListSchedulableByGroupIDAndPlatforms(ctx context.Context, groupID int64, platforms []string) ([]Account, error) {
+	return r.ListSchedulableByPlatforms(ctx, platforms)
+}
+
+func (r stubOpenAIAccountRepo) ListSchedulableUngroupedByPlatforms(ctx context.Context, platforms []string) ([]Account, error) {
+	return r.ListSchedulableByPlatforms(ctx, platforms)
 }
 
 type stubConcurrencyCache struct {
@@ -260,6 +282,24 @@ func TestOpenAIGatewayService_GenerateExplicitSessionHash_SkipsContentFallback(t
 		got := svc.GenerateExplicitSessionHash(c, []byte(`{"prompt_cache_key":"body-session"}`))
 		require.Equal(t, fmt.Sprintf("%016x", xxhash.Sum64String("header-session")), got)
 	})
+}
+
+func TestOpenAIGatewayService_ListSchedulableAccounts_IncludesNvidia(t *testing.T) {
+	svc := &OpenAIGatewayService{
+		accountRepo: stubOpenAIAccountRepo{
+			accounts: []Account{
+				{ID: 1, Platform: PlatformOpenAI, Status: StatusActive, Schedulable: true},
+				{ID: 2, Platform: PlatformNvidia, Status: StatusActive, Schedulable: true},
+				{ID: 3, Platform: PlatformAnthropic, Status: StatusActive, Schedulable: true},
+			},
+		},
+		cfg: &config.Config{},
+	}
+
+	accounts, err := svc.listSchedulableAccounts(context.Background(), nil)
+	require.NoError(t, err)
+	require.Len(t, accounts, 2)
+	require.Equal(t, []string{PlatformOpenAI, PlatformNvidia}, []string{accounts[0].Platform, accounts[1].Platform})
 }
 
 func TestOpenAIGatewayService_GenerateSessionHashWithFallback(t *testing.T) {

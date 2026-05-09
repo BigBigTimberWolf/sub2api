@@ -2287,6 +2287,40 @@ func (s *GatewayService) listSchedulableAccounts(ctx context.Context, groupID *i
 		return filtered, useMixed, nil
 	}
 
+	if platform == PlatformOpenAI {
+		platforms := []string{PlatformOpenAI, PlatformNvidia}
+		var accounts []Account
+		var err error
+		if s.cfg != nil && s.cfg.RunMode == config.RunModeSimple {
+			accounts, err = s.accountRepo.ListSchedulableByPlatforms(ctx, platforms)
+		} else if groupID != nil {
+			accounts, err = s.accountRepo.ListSchedulableByGroupIDAndPlatforms(ctx, *groupID, platforms)
+		} else {
+			accounts, err = s.accountRepo.ListSchedulableUngroupedByPlatforms(ctx, platforms)
+		}
+		if err != nil {
+			slog.Debug("account_scheduling_list_failed",
+				"group_id", derefGroupID(groupID),
+				"platform", platform,
+				"error", err)
+			return nil, useMixed, err
+		}
+		slog.Debug("account_scheduling_list_openai_compatible",
+			"group_id", derefGroupID(groupID),
+			"platform", platform,
+			"count", len(accounts))
+		for _, acc := range accounts {
+			slog.Debug("account_scheduling_account_detail",
+				"account_id", acc.ID,
+				"name", acc.Name,
+				"platform", acc.Platform,
+				"type", acc.Type,
+				"status", acc.Status,
+				"tls_fingerprint", acc.IsTLSFingerprintEnabled())
+		}
+		return accounts, useMixed, nil
+	}
+
 	var accounts []Account
 	var err error
 	if s.cfg != nil && s.cfg.RunMode == config.RunModeSimple {
@@ -2340,6 +2374,9 @@ func (s *GatewayService) isAccountAllowedForPlatform(account *Account, platform 
 			return true
 		}
 		return account.Platform == PlatformAntigravity && account.IsMixedSchedulingEnabled()
+	}
+	if platform == PlatformOpenAI {
+		return account.Platform == PlatformOpenAI || account.Platform == PlatformNvidia
 	}
 	return account.Platform == platform
 }
@@ -3650,6 +3687,9 @@ func isPlatformFilteredForSelection(acc *Account, platform string, allowMixedSch
 	}
 	if strings.TrimSpace(platform) == "" {
 		return false
+	}
+	if platform == PlatformOpenAI {
+		return acc.Platform != PlatformOpenAI && acc.Platform != PlatformNvidia
 	}
 	return acc.Platform != platform
 }
@@ -9370,6 +9410,12 @@ func (s *GatewayService) GetAvailableModels(ctx context.Context, groupID *int64,
 	if platform != "" {
 		filtered := make([]Account, 0)
 		for _, acc := range accounts {
+			if platform == PlatformOpenAI {
+				if acc.Platform == PlatformOpenAI || acc.Platform == PlatformNvidia {
+					filtered = append(filtered, acc)
+				}
+				continue
+			}
 			if acc.Platform == platform {
 				filtered = append(filtered, acc)
 			}
