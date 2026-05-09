@@ -43,8 +43,8 @@ jobs:
           node-version: '24'
           cache: 'pnpm'
           cache-dependency-path: frontend/pnpm-lock.yaml
-      - name: Enable Corepack
-        run: corepack enable
+      - name: Install pnpm
+        run: npm install -g pnpm@9
       - name: Install dependencies
         working-directory: frontend
         run: pnpm install --frozen-lockfile
