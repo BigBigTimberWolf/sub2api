@@ -1058,6 +1058,12 @@ func (a *Account) GetOpenAISessionID() string {
 }
 
 func (a *Account) SupportsOpenAIImageCapability(capability OpenAIImagesCapability) bool {
+	if a == nil {
+		return false
+	}
+	if capability == "" {
+		return a.IsOpenAICompatible()
+	}
 	if !a.IsOpenAI() {
 		return false
 	}
