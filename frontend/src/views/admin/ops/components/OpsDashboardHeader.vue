@@ -106,9 +106,14 @@ function formatCustomTimeRangeLabel(startTime: string, endTime: string): string 
 
 const groups = ref<Array<{ id: number; name: string; platform: string }>>([])
 
+function getEffectiveGroupPlatform(platform: string): string {
+  return platform === 'nvidia' ? 'openai' : platform
+}
+
 const platformOptions = computed(() => [
   { value: '', label: t('common.all') },
   { value: 'openai', label: 'OpenAI' },
+  { value: 'nvidia', label: 'NVIDIA' },
   { value: 'anthropic', label: 'Anthropic' },
   { value: 'gemini', label: 'Gemini' },
   { value: 'antigravity', label: 'Antigravity' }
@@ -135,7 +140,8 @@ const queryModeOptions = computed(() => [
 ])
 
 const groupOptions = computed(() => {
-  const filtered = props.platform ? groups.value.filter((g) => g.platform === props.platform) : groups.value
+  const effectivePlatform = getEffectiveGroupPlatform(props.platform)
+  const filtered = effectivePlatform ? groups.value.filter((g) => g.platform === effectivePlatform) : groups.value
   return [{ value: null, label: t('common.all') }, ...filtered.map((g) => ({ value: g.id, label: g.name }))]
 })
 
@@ -144,7 +150,7 @@ watch(
   (newPlatform) => {
     if (!newPlatform) return
     const currentGroup = groups.value.find((g) => g.id === props.groupId)
-    if (currentGroup && currentGroup.platform !== newPlatform) {
+    if (currentGroup && currentGroup.platform !== getEffectiveGroupPlatform(newPlatform)) {
       emit('update:group', null)
     }
   }

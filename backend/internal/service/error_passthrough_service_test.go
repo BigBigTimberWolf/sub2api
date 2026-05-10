@@ -420,6 +420,18 @@ func TestPlatformMatches(t *testing.T) {
 			requestPlatform: "antigravity",
 			expected:        true,
 		},
+		{
+			name:            "匹配 nvidia",
+			rulePlatforms:   []string{"nvidia"},
+			requestPlatform: "nvidia",
+			expected:        true,
+		},
+		{
+			name:            "nvidia 不匹配 openai",
+			rulePlatforms:   []string{"openai"},
+			requestPlatform: "nvidia",
+			expected:        false,
+		},
 	}
 
 	for _, tt := range tests {

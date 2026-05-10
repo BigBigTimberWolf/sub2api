@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/Wei-Shaw/sub2api/internal/config"
+	"github.com/Wei-Shaw/sub2api/internal/model"
 	pkghttputil "github.com/Wei-Shaw/sub2api/internal/pkg/httputil"
 	"github.com/Wei-Shaw/sub2api/internal/pkg/pagination"
 	"github.com/Wei-Shaw/sub2api/internal/server/middleware"
@@ -130,6 +131,96 @@ func TestOpenAIHandleStreamingAwareError_NonStreaming(t *testing.T) {
 	require.True(t, ok)
 	assert.Equal(t, "upstream_error", errorObj["type"])
 	assert.Equal(t, "test error", errorObj["message"])
+}
+
+type errorPassthroughRepoStub struct {
+	rules []*model.ErrorPassthroughRule
+}
+
+func (s *errorPassthroughRepoStub) List(context.Context) ([]*model.ErrorPassthroughRule, error) {
+	return s.rules, nil
+}
+
+func (s *errorPassthroughRepoStub) GetByID(context.Context, int64) (*model.ErrorPassthroughRule, error) {
+	return nil, nil
+}
+
+func (s *errorPassthroughRepoStub) Create(context.Context, *model.ErrorPassthroughRule) (*model.ErrorPassthroughRule, error) {
+	return nil, errors.New("unexpected create")
+}
+
+func (s *errorPassthroughRepoStub) Update(context.Context, *model.ErrorPassthroughRule) (*model.ErrorPassthroughRule, error) {
+	return nil, errors.New("unexpected update")
+}
+
+func (s *errorPassthroughRepoStub) Delete(context.Context, int64) error {
+	return errors.New("unexpected delete")
+}
+
+type errorPassthroughCacheStub struct{}
+
+func (s *errorPassthroughCacheStub) Get(context.Context) ([]*model.ErrorPassthroughRule, bool) {
+	return nil, false
+}
+
+func (s *errorPassthroughCacheStub) Set(context.Context, []*model.ErrorPassthroughRule) error {
+	return nil
+}
+
+func (s *errorPassthroughCacheStub) Invalidate(context.Context) error {
+	return nil
+}
+
+func (s *errorPassthroughCacheStub) NotifyUpdate(context.Context) error {
+	return nil
+}
+
+func (s *errorPassthroughCacheStub) SubscribeUpdates(context.Context, func()) {}
+
+func TestOpenAIHandleFailoverExhausted_UsesActualPlatformForPassthroughRule(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	w := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(w)
+	c.Request = httptest.NewRequest(http.MethodPost, "/v1/responses", nil)
+
+	respCode := http.StatusUnprocessableEntity
+	customMessage := "NVIDIA 上游失败"
+	ruleSvc := service.NewErrorPassthroughService(
+		&errorPassthroughRepoStub{
+			rules: []*model.ErrorPassthroughRule{{
+				ID:              1,
+				Name:            "nvidia-only",
+				Enabled:         true,
+				Priority:        1,
+				ErrorCodes:      []int{http.StatusForbidden},
+				Keywords:        []string{"quota exhausted"},
+				MatchMode:       model.MatchModeAll,
+				Platforms:       []string{service.PlatformNvidia},
+				PassthroughCode: false,
+				ResponseCode:    &respCode,
+				PassthroughBody: false,
+				CustomMessage:   &customMessage,
+			}},
+		},
+		&errorPassthroughCacheStub{},
+	)
+
+	h := &OpenAIGatewayHandler{errorPassthroughService: ruleSvc}
+	failoverErr := &service.UpstreamFailoverError{
+		StatusCode:   http.StatusForbidden,
+		ResponseBody: []byte(`{"error":{"message":"quota exhausted"}}`),
+	}
+
+	h.handleFailoverExhausted(c, failoverErr, service.PlatformNvidia, false)
+
+	assert.Equal(t, http.StatusUnprocessableEntity, w.Code)
+	var parsed map[string]any
+	err := json.Unmarshal(w.Body.Bytes(), &parsed)
+	require.NoError(t, err)
+	errorObj, ok := parsed["error"].(map[string]any)
+	require.True(t, ok)
+	assert.Equal(t, "upstream_error", errorObj["type"])
+	assert.Equal(t, customMessage, errorObj["message"])
 }
 
 func TestReadRequestBodyWithPrealloc(t *testing.T) {
