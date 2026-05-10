@@ -5276,7 +5276,17 @@ func (s *OpenAIGatewayService) RecordUsage(ctx context.Context, input *OpenAIRec
 	}
 	cost, err = s.calculateOpenAIRecordUsageCost(ctx, result, apiKey, billingModels, multiplier, imageMultiplier, tokens, serviceTier)
 	if err != nil {
-		return err
+		// 新模型尚未配置价格时，仍然保留 usage 记录，避免面板完全无数据。
+		logger.LegacyPrintf(
+			"service.openai_gateway",
+			"Calculate usage cost failed, persist zero-cost usage log instead: request_id=%s model=%s upstream_model=%s billing_models=%s err=%v",
+			result.RequestID,
+			result.Model,
+			result.UpstreamModel,
+			strings.Join(billingModels, ","),
+			err,
+		)
+		cost = &CostBreakdown{}
 	}
 
 	// Determine billing type
