@@ -104,6 +104,8 @@
                   ? 'bg-orange-100 text-orange-700 dark:bg-orange-900/30 dark:text-orange-400'
                   : value === 'openai'
                     ? 'bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-400'
+                    : value === 'nvidia'
+                      ? 'bg-lime-100 text-lime-700 dark:bg-lime-900/30 dark:text-lime-300'
                     : value === 'antigravity'
                       ? 'bg-purple-100 text-purple-700 dark:bg-purple-900/30 dark:text-purple-400'
                       : 'bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-400',
@@ -654,7 +656,8 @@
           v-if="
             createForm.platform === 'antigravity' ||
             createForm.platform === 'gemini' ||
-            createForm.platform === 'openai'
+            createForm.platform === 'openai' ||
+            createForm.platform === 'nvidia'
           "
           class="border-t pt-4"
         >
@@ -1839,7 +1842,8 @@
           v-if="
             editForm.platform === 'antigravity' ||
             editForm.platform === 'gemini' ||
-            editForm.platform === 'openai'
+            editForm.platform === 'openai' ||
+            editForm.platform === 'nvidia'
           "
           class="border-t pt-4"
         >
@@ -2761,6 +2765,8 @@
                       ? 'bg-orange-100 text-orange-700 dark:bg-orange-900/30 dark:text-orange-400'
                       : group.platform === 'openai'
                         ? 'bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-400'
+                        : group.platform === 'nvidia'
+                          ? 'bg-lime-100 text-lime-700 dark:bg-lime-900/30 dark:text-lime-300'
                         : group.platform === 'antigravity'
                           ? 'bg-purple-100 text-purple-700 dark:bg-purple-900/30 dark:text-purple-400'
                           : 'bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-400',
@@ -2923,6 +2929,7 @@ const exclusiveOptions = computed(() => [
 const platformOptions = computed(() => [
   { value: "anthropic", label: "Anthropic" },
   { value: "openai", label: "OpenAI" },
+  { value: "nvidia", label: "NVIDIA" },
   { value: "gemini", label: "Gemini" },
   { value: "antigravity", label: "Antigravity" },
 ]);
@@ -2931,6 +2938,7 @@ const platformFilterOptions = computed(() => [
   { value: "", label: t("admin.groups.allPlatforms") },
   { value: "anthropic", label: "Anthropic" },
   { value: "openai", label: "OpenAI" },
+  { value: "nvidia", label: "NVIDIA" },
   { value: "gemini", label: "Gemini" },
   { value: "antigravity", label: "Antigravity" },
 ]);

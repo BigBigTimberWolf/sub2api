@@ -15,6 +15,10 @@ import (
 )
 
 func newGatewayRoutesTestRouter() *gin.Engine {
+	return newGatewayRoutesTestRouterWithPlatform(service.PlatformOpenAI)
+}
+
+func newGatewayRoutesTestRouterWithPlatform(platform string) *gin.Engine {
 	gin.SetMode(gin.TestMode)
 	router := gin.New()
 
@@ -28,7 +32,7 @@ func newGatewayRoutesTestRouter() *gin.Engine {
 			groupID := int64(1)
 			c.Set(string(servermiddleware.ContextKeyAPIKey), &service.APIKey{
 				GroupID: &groupID,
-				Group:   &service.Group{Platform: service.PlatformOpenAI},
+				Group:   &service.Group{Platform: platform},
 			})
 			c.Next()
 		}),
@@ -75,5 +79,24 @@ func TestGatewayRoutesOpenAIImagesPathsAreRegistered(t *testing.T) {
 
 		router.ServeHTTP(w, req)
 		require.NotEqual(t, http.StatusNotFound, w.Code, "path=%s should hit OpenAI images handler", path)
+	}
+}
+
+func TestGatewayRoutesNvidiaUsesOpenAICompatibleRoutes(t *testing.T) {
+	router := newGatewayRoutesTestRouterWithPlatform(service.PlatformNvidia)
+
+	for _, path := range []string{
+		"/v1/messages",
+		"/v1/responses",
+		"/v1/chat/completions",
+		"/v1/images/generations",
+		"/images/edits",
+	} {
+		req := httptest.NewRequest(http.MethodPost, path, strings.NewReader(`{"model":"gpt-5","prompt":"draw a cat"}`))
+		req.Header.Set("Content-Type", "application/json")
+		w := httptest.NewRecorder()
+
+		router.ServeHTTP(w, req)
+		require.NotEqual(t, http.StatusNotFound, w.Code, "path=%s should hit OpenAI-compatible handler for nvidia groups", path)
 	}
 }

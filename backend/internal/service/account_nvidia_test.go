@@ -329,10 +329,13 @@ type createAccountGroupRepoStub struct {
 }
 
 func (s *createAccountGroupRepoStub) ListActiveByPlatform(_ context.Context, platform string) ([]Group, error) {
-	if platform != PlatformOpenAI {
-		return nil, nil
+	filtered := make([]Group, 0, len(s.groups))
+	for _, group := range s.groups {
+		if group.Platform == platform {
+			filtered = append(filtered, group)
+		}
 	}
-	return append([]Group(nil), s.groups...), nil
+	return filtered, nil
 }
 
 func (s *createAccountGroupRepoStub) Create(context.Context, *Group) error {
@@ -381,11 +384,11 @@ func (s *createAccountGroupRepoStub) UpdateSortOrders(context.Context, []GroupSo
 	panic("unexpected")
 }
 
-func TestAdminService_CreateAccount_NvidiaBindsOpenAIDefaultGroup(t *testing.T) {
+func TestAdminService_CreateAccount_NvidiaBindsNvidiaDefaultGroup(t *testing.T) {
 	accountRepo := &createAccountRepoStub{}
 	groupRepo := &createAccountGroupRepoStub{
 		groups: []Group{
-			{ID: 88, Name: "openai-default", Platform: PlatformOpenAI, Status: StatusActive},
+			{ID: 88, Name: "nvidia-default", Platform: PlatformNvidia, Status: StatusActive},
 		},
 	}
 	svc := &adminServiceImpl{
@@ -406,4 +409,29 @@ func TestAdminService_CreateAccount_NvidiaBindsOpenAIDefaultGroup(t *testing.T) 
 	require.Equal(t, int64(1001), account.ID)
 	require.Equal(t, int64(1001), accountRepo.bindAccountID)
 	require.Equal(t, []int64{88}, accountRepo.bindGroupIDs)
+}
+
+func TestAdminService_CreateAccount_NvidiaFallsBackToOpenAIDefaultGroup(t *testing.T) {
+	accountRepo := &createAccountRepoStub{}
+	groupRepo := &createAccountGroupRepoStub{
+		groups: []Group{
+			{ID: 99, Name: "openai-default", Platform: PlatformOpenAI, Status: StatusActive},
+		},
+	}
+	svc := &adminServiceImpl{
+		accountRepo: accountRepo,
+		groupRepo:   groupRepo,
+	}
+
+	account, err := svc.CreateAccount(context.Background(), &CreateAccountInput{
+		Name:        "nvidia account",
+		Platform:    PlatformNvidia,
+		Type:        AccountTypeAPIKey,
+		Credentials: map[string]any{"api_key": "nvapi-test"},
+	})
+
+	require.NoError(t, err)
+	require.NotNil(t, account)
+	require.Equal(t, PlatformNvidia, account.Platform)
+	require.Equal(t, []int64{99}, accountRepo.bindGroupIDs)
 }

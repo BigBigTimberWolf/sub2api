@@ -2037,6 +2037,7 @@ export default {
         all: 'All Platforms',
         anthropic: 'Anthropic',
         openai: 'OpenAI',
+        nvidia: 'NVIDIA',
         gemini: 'Gemini',
         antigravity: 'Antigravity',
       },

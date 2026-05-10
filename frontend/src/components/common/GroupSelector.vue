@@ -97,7 +97,7 @@ const filteredGroups = computed(() => {
         (g) => g.platform === 'antigravity' || g.platform === 'anthropic' || g.platform === 'gemini'
       )
     } else if (props.platform === 'nvidia') {
-      result = result.filter((g) => g.platform === 'openai')
+      result = result.filter((g) => g.platform === 'nvidia' || props.modelValue.includes(g.id))
     } else {
       // 默认：只能选择同 platform 的分组
       result = result.filter((g) => g.platform === props.platform)

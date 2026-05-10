@@ -2355,9 +2355,6 @@ func (s *adminServiceImpl) CreateAccount(ctx context.Context, input *CreateAccou
 	// 如果没有指定分组,自动绑定对应平台的默认分组
 	if len(groupIDs) == 0 && !input.SkipDefaultGroupBind {
 		defaultGroupPlatform := input.Platform
-		if input.Platform == PlatformNvidia {
-			defaultGroupPlatform = PlatformOpenAI
-		}
 		defaultGroupName := defaultGroupPlatform + "-default"
 		groups, err := s.groupRepo.ListActiveByPlatform(ctx, defaultGroupPlatform)
 		if err == nil {
@@ -2365,6 +2362,19 @@ func (s *adminServiceImpl) CreateAccount(ctx context.Context, input *CreateAccou
 				if g.Name == defaultGroupName {
 					groupIDs = []int64{g.ID}
 					break
+				}
+			}
+		}
+		if len(groupIDs) == 0 && input.Platform == PlatformNvidia {
+			fallbackPlatform := PlatformOpenAI
+			fallbackGroupName := fallbackPlatform + "-default"
+			fallbackGroups, err := s.groupRepo.ListActiveByPlatform(ctx, fallbackPlatform)
+			if err == nil {
+				for _, g := range fallbackGroups {
+					if g.Name == fallbackGroupName {
+						groupIDs = []int64{g.ID}
+						break
+					}
 				}
 			}
 		}
