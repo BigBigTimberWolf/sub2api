@@ -168,9 +168,13 @@ import PlatformIcon from '@/components/common/PlatformIcon.vue'
 import type { GroupPlatform } from '@/types'
 import { platformBadgeClass, platformBorderClass, platformBadgeLightClass } from '@/utils/platformColors'
 
+type SupportedModelChipModel = UserSupportedModel & {
+  platform?: string | null
+}
+
 const props = withDefaults(
   defineProps<{
-    model: UserSupportedModel
+    model: SupportedModelChipModel
     /** i18n 前缀：管理端传 `admin.availableChannels.pricing`，用户端传 `availableChannels.pricing`。 */
     pricingKeyPrefix?: string
     noPricingLabel?: string
@@ -189,7 +193,7 @@ const props = withDefaults(
   }
 )
 
-const effectivePlatform = computed<string>(() => props.model.platform || props.platformHint || '')
+const effectivePlatform = computed<string>(() => String(props.model.platform || props.platformHint || '').trim())
 
 const { t } = useI18n()
 
