@@ -2516,6 +2516,22 @@ func (s *OpenAIGatewayService) Forward(ctx context.Context, c *gin.Context, acco
 		}
 	}
 
+	if account.Platform == PlatformNvidia {
+		setOpsUpstreamRequestBody(c, body)
+		return s.ForwardAsResponsesViaNvidiaChatCompletions(
+			ctx,
+			c,
+			account,
+			body,
+			reqBody,
+			originalModel,
+			billingModel,
+			upstreamModel,
+			promptCacheKey,
+			startTime,
+		)
+	}
+
 	// Get access token
 	token, _, err := s.GetAccessToken(ctx, account)
 	if err != nil {

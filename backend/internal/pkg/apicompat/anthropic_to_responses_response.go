@@ -391,6 +391,9 @@ func anthToResHandleContentBlockStop(evt *AnthropicStreamEvent, state *Anthropic
 func anthToResHandleMessageDelta(evt *AnthropicStreamEvent, state *AnthropicEventToResponsesState) []ResponsesStreamEvent {
 	// Update usage
 	if evt.Usage != nil {
+		if evt.Usage.InputTokens > 0 {
+			state.InputTokens = evt.Usage.InputTokens
+		}
 		state.OutputTokens = evt.Usage.OutputTokens
 		if evt.Usage.CacheReadInputTokens > 0 {
 			state.CacheReadInputTokens = evt.Usage.CacheReadInputTokens

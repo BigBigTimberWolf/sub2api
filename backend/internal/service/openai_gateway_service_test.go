@@ -1907,6 +1907,134 @@ func TestOpenAIBuildUpstreamRequestPreservesCompactPathForAPIKeyBaseURL(t *testi
 	require.Equal(t, "https://example.com/v1/responses/compact", req.URL.String())
 }
 
+func TestOpenAIGatewayService_NvidiaResponsesBridgeUsesChatCompletions(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+
+	rec := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(rec)
+	originalBody := []byte(`{"model":"meta/llama-3.1-70b-instruct","stream":false,"instructions":"be terse","input":[{"role":"developer","content":[{"type":"input_text","text":"You are a coding assistant."}]},{"role":"user","content":[{"type":"input_text","text":"say hi"}]}],"reasoning":{"effort":"medium"},"service_tier":"flex","tools":[{"type":"function","name":"echo","parameters":{"type":"object"}}]}`)
+	c.Request = httptest.NewRequest(http.MethodPost, "/v1/responses", bytes.NewReader(originalBody))
+	c.Request.Header.Set("Content-Type", "application/json")
+
+	upstream := &httpUpstreamRecorder{resp: &http.Response{
+		StatusCode: http.StatusOK,
+		Header:     http.Header{"Content-Type": []string{"application/json"}, "x-request-id": []string{"rid_nvidia_responses"}},
+		Body:       io.NopCloser(strings.NewReader(`{"id":"chatcmpl_nv_1","object":"chat.completion","created":1730000000,"model":"meta/llama-3.1-70b-instruct","choices":[{"index":0,"message":{"role":"assistant","content":"hi"},"finish_reason":"stop"}],"usage":{"prompt_tokens":9,"completion_tokens":3,"total_tokens":12}}`)),
+	}}
+
+	svc := &OpenAIGatewayService{
+		cfg: &config.Config{
+			Security: config.SecurityConfig{
+				URLAllowlist: config.URLAllowlistConfig{Enabled: false},
+			},
+		},
+		httpUpstream: upstream,
+	}
+	account := &Account{
+		ID:          321,
+		Name:        "nvidia-api",
+		Platform:    PlatformNvidia,
+		Type:        AccountTypeAPIKey,
+		Concurrency: 1,
+		Credentials: map[string]any{
+			"api_key":  "nvapi-test",
+			"base_url": "https://integrate.api.nvidia.com/v1",
+		},
+		Status:      StatusActive,
+		Schedulable: true,
+	}
+
+	result, err := svc.Forward(context.Background(), c, account, originalBody)
+	require.NoError(t, err)
+	require.NotNil(t, result)
+	require.NotNil(t, upstream.lastReq)
+	require.Equal(t, "https://integrate.api.nvidia.com/v1/chat/completions", upstream.lastReq.URL.String())
+	require.Equal(t, "Bearer nvapi-test", upstream.lastReq.Header.Get("Authorization"))
+	require.Equal(t, "application/json", upstream.lastReq.Header.Get("Accept"))
+	require.Equal(t, "meta/llama-3.1-70b-instruct", gjson.GetBytes(upstream.lastBody, "model").String())
+	require.Equal(t, "system", gjson.GetBytes(upstream.lastBody, "messages.0.role").String())
+	require.Equal(t, "be terse", gjson.GetBytes(upstream.lastBody, "messages.0.content").String())
+	require.Equal(t, "system", gjson.GetBytes(upstream.lastBody, "messages.1.role").String())
+	require.Equal(t, "You are a coding assistant.", gjson.GetBytes(upstream.lastBody, "messages.1.content").String())
+	require.Equal(t, "user", gjson.GetBytes(upstream.lastBody, "messages.2.role").String())
+	require.Equal(t, "say hi", gjson.GetBytes(upstream.lastBody, "messages.2.content").String())
+	require.Equal(t, "medium", gjson.GetBytes(upstream.lastBody, "reasoning_effort").String())
+	require.Equal(t, "flex", gjson.GetBytes(upstream.lastBody, "service_tier").String())
+	require.Equal(t, "function", gjson.GetBytes(upstream.lastBody, "tools.0.type").String())
+	require.Equal(t, "echo", gjson.GetBytes(upstream.lastBody, "tools.0.function.name").String())
+	require.Equal(t, http.StatusOK, rec.Code)
+	require.Equal(t, "response", gjson.GetBytes(rec.Body.Bytes(), "object").String())
+	require.Equal(t, "meta/llama-3.1-70b-instruct", gjson.GetBytes(rec.Body.Bytes(), "model").String())
+	require.Equal(t, "completed", gjson.GetBytes(rec.Body.Bytes(), "status").String())
+	require.Equal(t, "hi", gjson.GetBytes(rec.Body.Bytes(), "output.0.content.0.text").String())
+	require.Equal(t, 9, result.Usage.InputTokens)
+	require.Equal(t, 3, result.Usage.OutputTokens)
+	require.NotNil(t, result.ServiceTier)
+	require.Equal(t, "flex", *result.ServiceTier)
+	require.NotNil(t, result.ReasoningEffort)
+	require.Equal(t, "medium", *result.ReasoningEffort)
+}
+
+func TestOpenAIGatewayService_NvidiaResponsesBridgeStreamingKeepsReadingUsageChunk(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+
+	rec := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(rec)
+	originalBody := []byte(`{"model":"meta/llama-3.1-70b-instruct","stream":true,"input":[{"role":"user","content":[{"type":"input_text","text":"say hi"}]}]}`)
+	c.Request = httptest.NewRequest(http.MethodPost, "/v1/responses", bytes.NewReader(originalBody))
+	c.Request.Header.Set("Content-Type", "application/json")
+
+	upstreamBody := strings.Join([]string{
+		`data: {"id":"chatcmpl_nv_sse","object":"chat.completion.chunk","created":1730000000,"model":"meta/llama-3.1-70b-instruct","choices":[{"index":0,"delta":{"role":"assistant","content":"hi"},"finish_reason":null}]}`,
+		"",
+		`data: {"id":"chatcmpl_nv_sse","object":"chat.completion.chunk","created":1730000000,"model":"meta/llama-3.1-70b-instruct","choices":[{"index":0,"delta":{"content":""},"finish_reason":"stop"}]}`,
+		"",
+		`data: {"id":"chatcmpl_nv_sse","object":"chat.completion.chunk","created":1730000000,"model":"meta/llama-3.1-70b-instruct","choices":[],"usage":{"prompt_tokens":7,"completion_tokens":2,"total_tokens":9}}`,
+		"",
+		"data: [DONE]",
+		"",
+	}, "\n")
+	upstream := &httpUpstreamRecorder{resp: &http.Response{
+		StatusCode: http.StatusOK,
+		Header:     http.Header{"Content-Type": []string{"text/event-stream"}, "x-request-id": []string{"rid_nvidia_responses_stream"}},
+		Body:       io.NopCloser(strings.NewReader(upstreamBody)),
+	}}
+
+	svc := &OpenAIGatewayService{
+		cfg: &config.Config{
+			Security: config.SecurityConfig{
+				URLAllowlist: config.URLAllowlistConfig{Enabled: false},
+			},
+		},
+		httpUpstream: upstream,
+	}
+	account := &Account{
+		ID:          322,
+		Name:        "nvidia-api",
+		Platform:    PlatformNvidia,
+		Type:        AccountTypeAPIKey,
+		Concurrency: 1,
+		Credentials: map[string]any{
+			"api_key":  "nvapi-test",
+			"base_url": "https://integrate.api.nvidia.com/v1",
+		},
+		Status:      StatusActive,
+		Schedulable: true,
+	}
+
+	result, err := svc.Forward(context.Background(), c, account, originalBody)
+	require.NoError(t, err)
+	require.NotNil(t, result)
+	require.True(t, result.Stream)
+	require.Equal(t, 7, result.Usage.InputTokens)
+	require.Equal(t, 2, result.Usage.OutputTokens)
+	require.Contains(t, rec.Body.String(), `"type":"response.created"`)
+	require.Contains(t, rec.Body.String(), `"type":"response.output_text.delta"`)
+	require.Contains(t, rec.Body.String(), `"type":"response.completed"`)
+	require.Contains(t, rec.Body.String(), `"input_tokens":7`)
+	require.Contains(t, rec.Body.String(), `data: [DONE]`)
+}
+
 func TestOpenAIBuildUpstreamRequestOAuthOfficialClientOriginatorCompatibility(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 

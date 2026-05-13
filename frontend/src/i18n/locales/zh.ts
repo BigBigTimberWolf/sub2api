@@ -971,7 +971,6 @@ export default {
     columns: {
       name: '渠道名',
       description: '描述',
-      platform: '平台',
       groups: '我可访问的分组',
       supportedModels: '支持模型'
     },

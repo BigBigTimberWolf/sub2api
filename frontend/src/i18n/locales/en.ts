@@ -967,7 +967,6 @@ export default {
     columns: {
       name: 'Channel',
       description: 'Description',
-      platform: 'Platform',
       groups: 'Your Accessible Groups',
       supportedModels: 'Supported Models'
     },

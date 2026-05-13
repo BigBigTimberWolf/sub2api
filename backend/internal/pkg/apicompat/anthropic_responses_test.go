@@ -953,6 +953,31 @@ func TestStreamingFailedNoOutput(t *testing.T) {
 	assert.Equal(t, "message_stop", events[1].Type)
 }
 
+func TestAnthropicEventToResponses_MessageDeltaUsageCarriesInputTokens(t *testing.T) {
+	state := NewAnthropicEventToResponsesState()
+	state.ResponseID = "resp_usage_msg_delta"
+	state.Model = "gpt-5.2"
+	state.CreatedSent = true
+
+	_ = AnthropicEventToResponsesEvents(&AnthropicStreamEvent{
+		Type: "message_delta",
+		Usage: &AnthropicUsage{
+			InputTokens:          7,
+			OutputTokens:         2,
+			CacheReadInputTokens: 3,
+		},
+	}, state)
+
+	events := AnthropicEventToResponsesEvents(&AnthropicStreamEvent{Type: "message_stop"}, state)
+	require.Len(t, events, 1)
+	require.NotNil(t, events[0].Response)
+	assert.Equal(t, 7, events[0].Response.Usage.InputTokens)
+	assert.Equal(t, 2, events[0].Response.Usage.OutputTokens)
+	assert.Equal(t, 9, events[0].Response.Usage.TotalTokens)
+	require.NotNil(t, events[0].Response.Usage.InputTokensDetails)
+	assert.Equal(t, 3, events[0].Response.Usage.InputTokensDetails.CachedTokens)
+}
+
 func TestResponsesToAnthropic_Failed(t *testing.T) {
 	resp := &ResponsesResponse{
 		ID:     "resp_fail_3",
