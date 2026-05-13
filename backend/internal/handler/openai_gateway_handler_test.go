@@ -538,6 +538,61 @@ func TestOpenAIResponses_MissingDependencies_ReturnsServiceUnavailable(t *testin
 	assert.Equal(t, "Service temporarily unavailable", errorObj["message"])
 }
 
+func TestOpenAICountTokens_ReturnsEstimatedAnthropicTokens(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+
+	groupID := int64(2)
+	w := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(w)
+	c.Request = httptest.NewRequest(http.MethodPost, "/v1/messages/count_tokens", strings.NewReader(`{
+		"model":"claude-sonnet-4-5",
+		"system":"You are a coding assistant.",
+		"messages":[{"role":"user","content":"hello from count tokens"}]
+	}`))
+	c.Request.Header.Set("Content-Type", "application/json")
+	c.Set(string(middleware.ContextKeyAPIKey), &service.APIKey{
+		ID:      101,
+		GroupID: &groupID,
+		Group:   &service.Group{ID: groupID, Platform: service.PlatformNvidia},
+		User:    &service.User{ID: 1},
+	})
+	c.Set(string(middleware.ContextKeyUser), middleware.AuthSubject{UserID: 1, Concurrency: 1})
+
+	billingCfg := &config.Config{}
+	billingCfg.RunMode = config.RunModeSimple
+	billingSvc := service.NewBillingCacheService(nil, nil, nil, nil, nil, nil, billingCfg)
+	defer billingSvc.Stop()
+
+	h := &OpenAIGatewayHandler{
+		billingCacheService: billingSvc,
+	}
+
+	h.CountTokens(c)
+
+	require.Equal(t, http.StatusOK, w.Code)
+	require.Greater(t, gjson.GetBytes(w.Body.Bytes(), "input_tokens").Int(), int64(0))
+}
+
+func TestOpenAIModels_DefaultNvidiaModels(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+
+	groupID := int64(2)
+	w := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(w)
+	c.Request = httptest.NewRequest(http.MethodGet, "/v1/models", nil)
+	c.Set(string(middleware.ContextKeyAPIKey), &service.APIKey{
+		GroupID: &groupID,
+		Group:   &service.Group{ID: groupID, Platform: service.PlatformNvidia},
+	})
+
+	h := &OpenAIGatewayHandler{}
+	h.Models(c)
+
+	require.Equal(t, http.StatusOK, w.Code)
+	require.Equal(t, "meta/llama-3.3-70b-instruct", gjson.GetBytes(w.Body.Bytes(), "data.1.id").String())
+	require.Equal(t, "nvidia", gjson.GetBytes(w.Body.Bytes(), "data.0.owned_by").String())
+}
+
 func TestOpenAIResponses_SetsClientTransportHTTP(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 

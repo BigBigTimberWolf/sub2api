@@ -2466,6 +2466,13 @@ func estimateTokensForText(s string) int {
 	return len(runes)
 }
 
+func estimateJSONTextTokens(raw json.RawMessage) int {
+	if len(raw) == 0 {
+		return 0
+	}
+	return estimateTokensForText(strings.TrimSpace(string(raw)))
+}
+
 type UpstreamHTTPResult struct {
 	StatusCode int
 	Headers    http.Header

@@ -296,7 +296,7 @@ func TestOpenAIGatewayService_ListSchedulableAccounts_IncludesNvidia(t *testing.
 		cfg: &config.Config{},
 	}
 
-	accounts, err := svc.listSchedulableAccounts(context.Background(), nil)
+	accounts, err := svc.listSchedulableAccounts(context.Background(), nil, PlatformOpenAI)
 	require.NoError(t, err)
 	require.Len(t, accounts, 2)
 	require.Equal(t, []string{PlatformOpenAI, PlatformNvidia}, []string{accounts[0].Platform, accounts[1].Platform})

@@ -12,9 +12,12 @@ import (
 	"time"
 
 	"github.com/Wei-Shaw/sub2api/internal/config"
+	"github.com/Wei-Shaw/sub2api/internal/pkg/apicompat"
+	"github.com/Wei-Shaw/sub2api/internal/pkg/ctxkey"
 	pkghttputil "github.com/Wei-Shaw/sub2api/internal/pkg/httputil"
 	"github.com/Wei-Shaw/sub2api/internal/pkg/ip"
 	"github.com/Wei-Shaw/sub2api/internal/pkg/logger"
+	"github.com/Wei-Shaw/sub2api/internal/pkg/openai"
 	middleware2 "github.com/Wei-Shaw/sub2api/internal/server/middleware"
 	"github.com/Wei-Shaw/sub2api/internal/service"
 
@@ -37,6 +40,89 @@ type OpenAIGatewayHandler struct {
 	imageLimiter             *imageConcurrencyLimiter
 	maxAccountSwitches       int
 	cfg                      *config.Config
+}
+
+// CountTokens handles Claude-compatible /v1/messages/count_tokens for
+// OpenAI-compatible groups using a local best-effort estimate.
+func (h *OpenAIGatewayHandler) CountTokens(c *gin.Context) {
+	apiKey, ok := middleware2.GetAPIKeyFromContext(c)
+	if !ok {
+		h.anthropicErrorResponse(c, http.StatusUnauthorized, "authentication_error", "Invalid API key")
+		return
+	}
+
+	isNvidia := apiKey.Group != nil && apiKey.Group.Platform == service.PlatformNvidia
+	if !isNvidia && apiKey.Group != nil && !apiKey.Group.AllowMessagesDispatch {
+		h.anthropicErrorResponse(c, http.StatusForbidden, "permission_error", "This group does not allow /v1/messages dispatch")
+		return
+	}
+
+	if h == nil || h.billingCacheService == nil {
+		h.anthropicErrorResponse(c, http.StatusServiceUnavailable, "api_error", "Service temporarily unavailable")
+		return
+	}
+
+	body, err := pkghttputil.ReadRequestBodyWithPrealloc(c.Request)
+	if err != nil {
+		if maxErr, ok := extractMaxBytesError(err); ok {
+			h.anthropicErrorResponse(c, http.StatusRequestEntityTooLarge, "invalid_request_error", buildBodyTooLargeMessage(maxErr.Limit))
+			return
+		}
+		h.anthropicErrorResponse(c, http.StatusBadRequest, "invalid_request_error", "Failed to read request body")
+		return
+	}
+	if len(body) == 0 {
+		h.anthropicErrorResponse(c, http.StatusBadRequest, "invalid_request_error", "Request body is empty")
+		return
+	}
+	if !gjson.ValidBytes(body) {
+		h.anthropicErrorResponse(c, http.StatusBadRequest, "invalid_request_error", "Failed to parse request body")
+		return
+	}
+
+	var anthropicReq apicompat.AnthropicRequest
+	if err := json.Unmarshal(body, &anthropicReq); err != nil {
+		h.anthropicErrorResponse(c, http.StatusBadRequest, "invalid_request_error", "Failed to parse request body")
+		return
+	}
+	if strings.TrimSpace(anthropicReq.Model) == "" {
+		h.anthropicErrorResponse(c, http.StatusBadRequest, "invalid_request_error", "model is required")
+		return
+	}
+
+	setOpsRequestContext(c, anthropicReq.Model, false, body)
+	setOpsEndpointContext(c, "", int16(service.RequestTypeFromLegacy(false, false)))
+
+	subscription, _ := middleware2.GetSubscriptionFromContext(c)
+	if err := h.billingCacheService.CheckBillingEligibility(c.Request.Context(), apiKey.User, apiKey, apiKey.Group, subscription); err != nil {
+		status, code, message, retryAfter := billingErrorDetails(err)
+		if retryAfter > 0 {
+			c.Header("Retry-After", strconv.Itoa(retryAfter))
+		}
+		h.anthropicErrorResponse(c, status, code, message)
+		return
+	}
+
+	estimated := service.EstimateAnthropicCountTokens(&anthropicReq)
+	c.JSON(http.StatusOK, gin.H{"input_tokens": estimated})
+}
+
+// Models handles /v1/models for OpenAI-compatible groups.
+func (h *OpenAIGatewayHandler) Models(c *gin.Context) {
+	apiKey, _ := middleware2.GetAPIKeyFromContext(c)
+
+	platform := ""
+	if apiKey != nil && apiKey.Group != nil {
+		platform = strings.TrimSpace(apiKey.Group.Platform)
+	}
+	if forcedPlatform, ok := middleware2.GetForcePlatformFromContext(c); ok && strings.TrimSpace(forcedPlatform) != "" {
+		platform = strings.TrimSpace(forcedPlatform)
+	}
+
+	c.JSON(http.StatusOK, gin.H{
+		"object": "list",
+		"data":   defaultOpenAICompatibleModels(platform),
+	})
 }
 
 func resolveOpenAIMessagesDispatchMappedModel(apiKey *service.APIKey, requestedModel string) string {
@@ -565,7 +651,9 @@ func (h *OpenAIGatewayHandler) Messages(c *gin.Context) {
 	)
 
 	// 检查分组是否允许 /v1/messages 调度
-	if apiKey.Group != nil && !apiKey.Group.AllowMessagesDispatch {
+	isNvidia := apiKey.Group != nil && apiKey.Group.Platform == service.PlatformNvidia
+
+	if !isNvidia && apiKey.Group != nil && !apiKey.Group.AllowMessagesDispatch {
 		h.anthropicErrorResponse(c, http.StatusForbidden, "permission_error",
 			"This group does not allow /v1/messages dispatch")
 		return
@@ -601,7 +689,10 @@ func (h *OpenAIGatewayHandler) Messages(c *gin.Context) {
 	}
 	reqModel := modelResult.String()
 	routingModel := service.NormalizeOpenAICompatRequestedModel(reqModel)
-	preferredMappedModel := resolveOpenAIMessagesDispatchMappedModel(apiKey, reqModel)
+	preferredMappedModel := ""
+	if !isNvidia {
+		preferredMappedModel = resolveOpenAIMessagesDispatchMappedModel(apiKey, reqModel)
+	}
 	reqStream := gjson.GetBytes(body, "stream").Bool()
 
 	reqLog = reqLog.With(zap.String("model", reqModel), zap.Bool("stream", reqStream))
@@ -648,6 +739,18 @@ func (h *OpenAIGatewayHandler) Messages(c *gin.Context) {
 	sessionHash := h.gatewayService.GenerateSessionHash(c, body)
 	promptCacheKey := h.gatewayService.ExtractSessionID(c, body)
 	sessionHash, promptCacheKey = resolveOpenAIMessagesMetadataSession(sessionHash, promptCacheKey, reqModel, body)
+
+	if isNvidia {
+		if channelMappingMsg.Mapped {
+			body = h.gatewayService.ReplaceModelInBody(body, channelMappingMsg.MappedModel)
+		}
+		if c != nil && c.Request != nil {
+			ctx := context.WithValue(c.Request.Context(), ctxkey.ForcePlatform, service.PlatformNvidia)
+			c.Request = c.Request.WithContext(ctx)
+		}
+		h.forwardNvidiaMessages(c, reqLog, apiKey, subject, subscription, body, reqModel, routingModel, reqStream, streamStarted, promptCacheKey, sessionHash, channelMappingMsg)
+		return
+	}
 
 	maxAccountSwitches := h.maxAccountSwitches
 	switchCount := 0
@@ -831,6 +934,196 @@ func (h *OpenAIGatewayHandler) Messages(c *gin.Context) {
 	}
 }
 
+func (h *OpenAIGatewayHandler) forwardNvidiaMessages(
+	c *gin.Context,
+	reqLog *zap.Logger,
+	apiKey *service.APIKey,
+	subject middleware2.AuthSubject,
+	subscription *service.UserSubscription,
+	body []byte,
+	reqModel string,
+	routingModel string,
+	reqStream bool,
+	streamStarted bool,
+	promptCacheKey string,
+	sessionHash string,
+	channelMappingMsg service.ChannelMappingResult,
+) {
+	if h == nil || h.gatewayService == nil {
+		h.anthropicErrorResponse(c, http.StatusServiceUnavailable, "api_error", "Service temporarily unavailable")
+		return
+	}
+
+	maxAccountSwitches := h.maxAccountSwitches
+	switchCount := 0
+	failedAccountIDs := make(map[int64]struct{})
+	sameAccountRetryCount := make(map[int64]int)
+	var lastFailoverErr *service.UpstreamFailoverError
+	routingStart := time.Now()
+
+	currentRoutingModel := routingModel
+	if currentRoutingModel == "" {
+		currentRoutingModel = reqModel
+	}
+
+	for {
+		reqLog.Debug("openai_messages.account_selecting", zap.Int("excluded_account_count", len(failedAccountIDs)))
+		selection, scheduleDecision, err := h.gatewayService.SelectAccountWithScheduler(
+			c.Request.Context(),
+			apiKey.GroupID,
+			"",
+			sessionHash,
+			currentRoutingModel,
+			failedAccountIDs,
+			service.OpenAIUpstreamTransportAny,
+			false,
+		)
+		if err != nil {
+			reqLog.Warn("openai_messages.account_select_failed",
+				zap.Error(err),
+				zap.Int("excluded_account_count", len(failedAccountIDs)),
+			)
+			if len(failedAccountIDs) == 0 {
+				h.anthropicStreamingAwareError(c, http.StatusServiceUnavailable, "api_error", "Service temporarily unavailable", streamStarted)
+				return
+			}
+			if lastFailoverErr != nil {
+				h.handleAnthropicFailoverExhausted(c, lastFailoverErr, streamStarted)
+			} else {
+				h.anthropicStreamingAwareError(c, http.StatusBadGateway, "api_error", "Upstream request failed", streamStarted)
+			}
+			return
+		}
+		if selection == nil || selection.Account == nil {
+			h.anthropicStreamingAwareError(c, http.StatusServiceUnavailable, "api_error", "No available accounts", streamStarted)
+			return
+		}
+		account := selection.Account
+		sessionHash = ensureOpenAIPoolModeSessionHash(sessionHash, account)
+		reqLog.Debug("openai_messages.account_selected", zap.Int64("account_id", account.ID), zap.String("account_name", account.Name))
+		_ = scheduleDecision
+		setOpsSelectedAccount(c, account.ID, account.Platform)
+
+		accountReleaseFunc, acquired := h.acquireResponsesAccountSlot(c, apiKey.GroupID, sessionHash, selection, reqStream, &streamStarted, reqLog)
+		if !acquired {
+			return
+		}
+
+		service.SetOpsLatencyMs(c, service.OpsRoutingLatencyMsKey, time.Since(routingStart).Milliseconds())
+		forwardStart := time.Now()
+
+		result, err := h.gatewayService.ForwardAsAnthropicViaNvidiaChatCompletions(c.Request.Context(), c, account, body, promptCacheKey, reqModel)
+
+		forwardDurationMs := time.Since(forwardStart).Milliseconds()
+		if accountReleaseFunc != nil {
+			accountReleaseFunc()
+		}
+		upstreamLatencyMs, _ := getContextInt64(c, service.OpsUpstreamLatencyMsKey)
+		responseLatencyMs := forwardDurationMs
+		if upstreamLatencyMs > 0 && forwardDurationMs > upstreamLatencyMs {
+			responseLatencyMs = forwardDurationMs - upstreamLatencyMs
+		}
+		service.SetOpsLatencyMs(c, service.OpsResponseLatencyMsKey, responseLatencyMs)
+		if err == nil && result != nil && result.FirstTokenMs != nil {
+			service.SetOpsLatencyMs(c, service.OpsTimeToFirstTokenMsKey, int64(*result.FirstTokenMs))
+		}
+		if err != nil {
+			if c != nil && c.Writer != nil && c.Writer.Written() {
+				return
+			}
+			if strings.Contains(err.Error(), "images are not supported") ||
+				strings.Contains(err.Error(), "model is required") ||
+				strings.Contains(err.Error(), "parse anthropic request") ||
+				strings.Contains(err.Error(), "inspect anthropic messages") ||
+				strings.Contains(err.Error(), "convert anthropic to chat completions") {
+				h.anthropicErrorResponse(c, http.StatusBadRequest, "invalid_request_error", err.Error())
+				return
+			}
+			var failoverErr *service.UpstreamFailoverError
+			if errors.As(err, &failoverErr) {
+				h.gatewayService.ReportOpenAIAccountScheduleResult(account.ID, false, nil)
+				if failoverErr.RetryableOnSameAccount {
+					retryLimit := account.GetPoolModeRetryCount()
+					if sameAccountRetryCount[account.ID] < retryLimit {
+						sameAccountRetryCount[account.ID]++
+						reqLog.Warn("openai_messages.pool_mode_same_account_retry",
+							zap.Int64("account_id", account.ID),
+							zap.Int("upstream_status", failoverErr.StatusCode),
+							zap.Int("retry_limit", retryLimit),
+							zap.Int("retry_count", sameAccountRetryCount[account.ID]),
+						)
+						select {
+						case <-c.Request.Context().Done():
+							return
+						case <-time.After(sameAccountRetryDelay):
+						}
+						continue
+					}
+				}
+				h.gatewayService.RecordOpenAIAccountSwitch()
+				failedAccountIDs[account.ID] = struct{}{}
+				lastFailoverErr = failoverErr
+				if switchCount >= maxAccountSwitches {
+					h.handleAnthropicFailoverExhausted(c, failoverErr, streamStarted)
+					return
+				}
+				switchCount++
+				reqLog.Warn("openai_messages.upstream_failover_switching",
+					zap.Int64("account_id", account.ID),
+					zap.Int("upstream_status", failoverErr.StatusCode),
+					zap.Int("switch_count", switchCount),
+					zap.Int("max_switches", maxAccountSwitches),
+				)
+				continue
+			}
+			h.anthropicStreamingAwareError(c, http.StatusBadGateway, "api_error", "Upstream request failed", streamStarted)
+			return
+		}
+		if result != nil {
+			h.gatewayService.ReportOpenAIAccountScheduleResult(account.ID, true, result.FirstTokenMs)
+		} else {
+			h.gatewayService.ReportOpenAIAccountScheduleResult(account.ID, true, nil)
+		}
+
+		userAgent := c.GetHeader("User-Agent")
+		clientIP := ip.GetClientIP(c)
+		requestPayloadHash := service.HashUsageRequestPayload(body)
+		inboundEndpoint := GetInboundEndpoint(c)
+		upstreamEndpoint := GetUpstreamEndpoint(c, account.Platform)
+
+		h.submitOpenAIUsageRecordTask(result, func(ctx context.Context) {
+			if err := h.gatewayService.RecordUsage(ctx, &service.OpenAIRecordUsageInput{
+				Result:             result,
+				APIKey:             apiKey,
+				User:               apiKey.User,
+				Account:            account,
+				Subscription:       subscription,
+				InboundEndpoint:    inboundEndpoint,
+				UpstreamEndpoint:   upstreamEndpoint,
+				UserAgent:          userAgent,
+				IPAddress:          clientIP,
+				RequestPayloadHash: requestPayloadHash,
+				APIKeyService:      h.apiKeyService,
+				ChannelUsageFields: channelMappingMsg.ToUsageFields(reqModel, result.UpstreamModel),
+			}); err != nil {
+				logger.L().With(
+					zap.String("component", "handler.openai_gateway.messages"),
+					zap.Int64("user_id", subject.UserID),
+					zap.Int64("api_key_id", apiKey.ID),
+					zap.Any("group_id", apiKey.GroupID),
+					zap.String("model", reqModel),
+					zap.Int64("account_id", account.ID),
+				).Error("openai_messages.record_usage_failed", zap.Error(err))
+			}
+		})
+		reqLog.Debug("openai_messages.request_completed",
+			zap.Int64("account_id", account.ID),
+			zap.Int("switch_count", switchCount),
+		)
+		return
+	}
+}
+
 func resolveOpenAIMessagesMetadataSession(sessionHash, promptCacheKey, reqModel string, body []byte) (string, string) {
 	// Anthropic metadata.user_id 只作为账号粘性信号。上游 GPT/Codex 缓存键
 	// 交给 ForwardAsAnthropic 从 cache_control 或完整消息 digest 派生，避免
@@ -843,6 +1136,54 @@ func resolveOpenAIMessagesMetadataSession(sessionHash, promptCacheKey, reqModel 
 		sessionHash = service.DeriveSessionHashFromSeed(seed)
 	}
 	return sessionHash, promptCacheKey
+}
+
+func openAICompatibleModelsFromIDs(ids []string, platform string) []openai.Model {
+	if len(ids) == 0 {
+		return defaultOpenAICompatibleModels(platform)
+	}
+
+	if strings.TrimSpace(platform) == service.PlatformNvidia {
+		mapping := make(map[string]string, len(ids))
+		for _, id := range ids {
+			trimmed := strings.TrimSpace(id)
+			if trimmed != "" {
+				mapping[trimmed] = trimmed
+			}
+		}
+		return service.NvidiaModelsFromMapping(mapping)
+	}
+
+	models := make([]openai.Model, 0, len(ids))
+	defaultByID := make(map[string]openai.Model, len(openai.DefaultModels))
+	for _, model := range openai.DefaultModels {
+		defaultByID[model.ID] = model
+	}
+	for _, id := range ids {
+		trimmed := strings.TrimSpace(id)
+		if trimmed == "" {
+			continue
+		}
+		if model, ok := defaultByID[trimmed]; ok {
+			models = append(models, model)
+			continue
+		}
+		models = append(models, openai.Model{
+			ID:          trimmed,
+			Object:      "model",
+			OwnedBy:     "openai",
+			Type:        "model",
+			DisplayName: trimmed,
+		})
+	}
+	return models
+}
+
+func defaultOpenAICompatibleModels(platform string) []openai.Model {
+	if strings.TrimSpace(platform) == service.PlatformNvidia {
+		return append([]openai.Model(nil), service.DefaultNvidiaModels...)
+	}
+	return append([]openai.Model(nil), openai.DefaultModels...)
 }
 
 // anthropicErrorResponse writes an error in Anthropic Messages API format.

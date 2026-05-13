@@ -48,21 +48,21 @@ func RegisterGatewayRoutes(
 			}
 			h.Gateway.Messages(c)
 		})
-		// /v1/messages/count_tokens: OpenAI groups get 404
+		// /v1/messages/count_tokens: OpenAI groups use the OpenAI-compatible handler
 		gateway.POST("/messages/count_tokens", func(c *gin.Context) {
 			if isOpenAICompatibleGroupPlatform(getGroupPlatform(c)) {
-				c.JSON(http.StatusNotFound, gin.H{
-					"type": "error",
-					"error": gin.H{
-						"type":    "not_found_error",
-						"message": "Token counting is not supported for this platform",
-					},
-				})
+				h.OpenAIGateway.CountTokens(c)
 				return
 			}
 			h.Gateway.CountTokens(c)
 		})
-		gateway.GET("/models", h.Gateway.Models)
+		gateway.GET("/models", func(c *gin.Context) {
+			if isOpenAICompatibleGroupPlatform(getGroupPlatform(c)) {
+				h.OpenAIGateway.Models(c)
+				return
+			}
+			h.Gateway.Models(c)
+		})
 		gateway.GET("/usage", h.Gateway.Usage)
 		// OpenAI Responses API: auto-route based on group platform
 		gateway.POST("/responses", func(c *gin.Context) {

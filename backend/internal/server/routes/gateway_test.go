@@ -87,6 +87,7 @@ func TestGatewayRoutesNvidiaUsesOpenAICompatibleRoutes(t *testing.T) {
 
 	for _, path := range []string{
 		"/v1/messages",
+		"/v1/messages/count_tokens",
 		"/v1/responses",
 		"/v1/chat/completions",
 		"/v1/images/generations",
@@ -99,4 +100,35 @@ func TestGatewayRoutesNvidiaUsesOpenAICompatibleRoutes(t *testing.T) {
 		router.ServeHTTP(w, req)
 		require.NotEqual(t, http.StatusNotFound, w.Code, "path=%s should hit OpenAI-compatible handler for nvidia groups", path)
 	}
+
+	req := httptest.NewRequest(http.MethodGet, "/v1/models", nil)
+	w := httptest.NewRecorder()
+
+	router.ServeHTTP(w, req)
+	require.NotEqual(t, http.StatusNotFound, w.Code, "path=/v1/models should hit OpenAI-compatible handler for nvidia groups")
+}
+
+func TestGatewayRoutesNvidiaModelsReturnOpenAICompatibleSchema(t *testing.T) {
+	router := newGatewayRoutesTestRouterWithPlatform(service.PlatformNvidia)
+
+	req := httptest.NewRequest(http.MethodGet, "/v1/models", nil)
+	w := httptest.NewRecorder()
+
+	router.ServeHTTP(w, req)
+
+	require.Equal(t, http.StatusOK, w.Code)
+	require.Contains(t, w.Body.String(), `"object":"list"`)
+	require.Contains(t, w.Body.String(), `"owned_by":"nvidia"`)
+}
+
+func TestGatewayRoutesOpenAICountTokensIsRegistered(t *testing.T) {
+	router := newGatewayRoutesTestRouter()
+
+	req := httptest.NewRequest(http.MethodPost, "/v1/messages/count_tokens", strings.NewReader(`{"model":"claude-sonnet-4-5","messages":[{"role":"user","content":"hi"}]}`))
+	req.Header.Set("Content-Type", "application/json")
+	w := httptest.NewRecorder()
+
+	router.ServeHTTP(w, req)
+
+	require.NotEqual(t, http.StatusNotFound, w.Code)
 }

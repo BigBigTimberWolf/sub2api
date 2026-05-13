@@ -21,7 +21,6 @@ import (
 	pkghttputil "github.com/Wei-Shaw/sub2api/internal/pkg/httputil"
 	"github.com/Wei-Shaw/sub2api/internal/pkg/ip"
 	"github.com/Wei-Shaw/sub2api/internal/pkg/logger"
-	"github.com/Wei-Shaw/sub2api/internal/pkg/openai"
 	"github.com/Wei-Shaw/sub2api/internal/pkg/timezone"
 	middleware2 "github.com/Wei-Shaw/sub2api/internal/server/middleware"
 	"github.com/Wei-Shaw/sub2api/internal/service"
@@ -947,18 +946,29 @@ func (h *GatewayHandler) Models(c *gin.Context) {
 	}
 
 	// Get available models from account configurations (without platform filter)
-	availableModels := h.gatewayService.GetAvailableModels(c.Request.Context(), groupID, "")
+	var availableModels []string
+	if h != nil && h.gatewayService != nil {
+		availableModels = h.gatewayService.GetAvailableModels(c.Request.Context(), groupID, "")
+	}
 
 	if len(availableModels) > 0 {
-		// Build model list from whitelist
-		models := make([]claude.Model, 0, len(availableModels))
-		for _, modelID := range availableModels {
-			models = append(models, claude.Model{
-				ID:          modelID,
-				Type:        "model",
-				DisplayName: modelID,
-				CreatedAt:   "2024-01-01T00:00:00Z",
-			})
+		var models any
+		switch platform {
+		case service.PlatformOpenAI:
+			models = openAICompatibleModelsFromIDs(availableModels, service.PlatformOpenAI)
+		case service.PlatformNvidia:
+			models = openAICompatibleModelsFromIDs(availableModels, service.PlatformNvidia)
+		default:
+			claudeModels := make([]claude.Model, 0, len(availableModels))
+			for _, modelID := range availableModels {
+				claudeModels = append(claudeModels, claude.Model{
+					ID:          modelID,
+					Type:        "model",
+					DisplayName: modelID,
+					CreatedAt:   "2024-01-01T00:00:00Z",
+				})
+			}
+			models = claudeModels
 		}
 		c.JSON(http.StatusOK, gin.H{
 			"object": "list",
@@ -968,10 +978,10 @@ func (h *GatewayHandler) Models(c *gin.Context) {
 	}
 
 	// Fallback to default models
-	if platform == "openai" {
+	if platform == service.PlatformOpenAI || platform == service.PlatformNvidia {
 		c.JSON(http.StatusOK, gin.H{
 			"object": "list",
-			"data":   openai.DefaultModels,
+			"data":   defaultOpenAICompatibleModels(platform),
 		})
 		return
 	}
