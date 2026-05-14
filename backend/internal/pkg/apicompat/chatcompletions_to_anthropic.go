@@ -22,7 +22,7 @@ func ChatCompletionsToAnthropicResponse(resp *ChatCompletionsResponse, model str
 	}
 
 	choice := resp.Choices[0]
-	if choice.Message.Content != nil && len(choice.Message.Content) > 0 {
+	if len(choice.Message.Content) > 0 {
 		if content, err := chatContentToAnthropicBlocks(choice.Message.Content); err == nil && len(content) > 0 {
 			out.Content = append(out.Content, content...)
 		}
@@ -389,7 +389,7 @@ func chatAnthropicHandleToolCallDelta(state *ChatEventToAnthropicState, tc ChatT
 		})
 	}
 	if tc.Function.Arguments != "" {
-		state.CurrentToolArgs.WriteString(tc.Function.Arguments)
+		_, _ = state.CurrentToolArgs.WriteString(tc.Function.Arguments)
 		block := state.Blocks[blockIdx]
 		block.Input = json.RawMessage(state.CurrentToolArgs.String())
 		state.Blocks[blockIdx] = block

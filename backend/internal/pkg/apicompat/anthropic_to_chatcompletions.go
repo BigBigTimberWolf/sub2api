@@ -432,12 +432,6 @@ func mustMarshalJSONString(s string) json.RawMessage {
 	return b
 }
 
-func generateAnthropicMsgID() string {
-	b := make([]byte, 12)
-	_, _ = rand.Read(b)
-	return "msg_" + hex.EncodeToString(b)
-}
-
 func generateAnthropicRespID() string {
 	b := make([]byte, 12)
 	_, _ = rand.Read(b)

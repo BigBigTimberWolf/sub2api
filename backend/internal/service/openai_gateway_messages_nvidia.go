@@ -252,14 +252,14 @@ func (s *OpenAIGatewayService) handleNvidiaAnthropicBufferedResponse(
 	}
 	c.JSON(http.StatusOK, anthropicResp)
 	return &OpenAIForwardResult{
-		RequestID:    requestID,
-		ResponseID:   ccResp.ID,
-		Usage:        copyOpenAIUsageFromChatUsage(ccResp.Usage),
-		Model:        originalModel,
-		BillingModel: billingModel,
+		RequestID:     requestID,
+		ResponseID:    ccResp.ID,
+		Usage:         copyOpenAIUsageFromChatUsage(ccResp.Usage),
+		Model:         originalModel,
+		BillingModel:  billingModel,
 		UpstreamModel: upstreamModel,
-		Stream:       false,
-		Duration:     time.Since(startTime),
+		Stream:        false,
+		Duration:      time.Since(startTime),
 	}, nil
 }
 
@@ -357,15 +357,15 @@ func (s *OpenAIGatewayService) handleNvidiaAnthropicStreamingResponse(
 		}
 	}
 	return &OpenAIForwardResult{
-		RequestID:    requestID,
-		ResponseID:   state.ResponseID,
-		Usage:        usage,
-		Model:        originalModel,
-		BillingModel: billingModel,
+		RequestID:     requestID,
+		ResponseID:    state.ResponseID,
+		Usage:         usage,
+		Model:         originalModel,
+		BillingModel:  billingModel,
 		UpstreamModel: upstreamModel,
-		Stream:       true,
-		Duration:     time.Since(startTime),
-		FirstTokenMs: firstTokenMs,
+		Stream:        true,
+		Duration:      time.Since(startTime),
+		FirstTokenMs:  firstTokenMs,
 	}, nil
 }
 

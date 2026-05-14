@@ -9,10 +9,6 @@ import (
 
 const estimatedImageInputTokens = 256
 
-type anthropicCountTokensResponse struct {
-	InputTokens int `json:"input_tokens"`
-}
-
 // estimateAnthropicCountTokens returns a best-effort estimate for Claude-style
 // input tokens without calling an upstream count_tokens endpoint. This is used
 // for OpenAI-compatible groups where upstream support is inconsistent or absent.

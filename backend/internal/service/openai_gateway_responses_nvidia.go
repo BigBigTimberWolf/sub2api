@@ -338,7 +338,7 @@ func normalizeResponsesMessageContentForChat(raw json.RawMessage, role string) (
 			case "input_image":
 				if role != "assistant" && part.ImageURL != "" {
 					chatParts = append(chatParts, apicompat.ChatContentPart{
-						Type: "image_url",
+						Type:     "image_url",
 						ImageURL: &apicompat.ChatImageURL{URL: part.ImageURL},
 					})
 				}
