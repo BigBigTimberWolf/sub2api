@@ -3130,6 +3130,10 @@ export default {
       openai: {
         baseUrlHint: 'Leave default for official OpenAI API',
         apiKeyHint: 'Your OpenAI API Key',
+        userAgent: 'Account User-Agent',
+        userAgentPlaceholder: 'Leave empty to use the default upstream User-Agent',
+        userAgentDesc:
+          'Only applies to OpenAI API Key accounts. OAuth accounts still keep Codex CLI compatibility headers.',
         oauthPassthrough: 'Auto passthrough (auth only)',
         oauthPassthroughDesc:
           'When enabled, this OpenAI account uses automatic passthrough: the gateway forwards request/response as-is and only swaps auth, while keeping billing/concurrency/audit and necessary safety filtering.',

@@ -1339,6 +1339,20 @@
         </div>
       </div>
 
+      <div
+        v-if="account?.platform === 'openai' && account?.type === 'apikey'"
+        class="border-t border-gray-200 pt-4 dark:border-dark-600"
+      >
+        <label class="input-label">{{ t('admin.accounts.openai.userAgent') }}</label>
+        <input
+          v-model="openAIUserAgent"
+          type="text"
+          class="input"
+          :placeholder="t('admin.accounts.openai.userAgentPlaceholder')"
+        />
+        <p class="input-hint">{{ t('admin.accounts.openai.userAgentDesc') }}</p>
+      </div>
+
       <!-- OpenAI Codex 图片生成桥接账号级覆盖 -->
       <div
         v-if="account?.platform === 'openai' && (account?.type === 'oauth' || account?.type === 'apikey')"
@@ -2354,6 +2368,7 @@ const customBaseUrl = ref('')
 
 // OpenAI 自动透传开关（OAuth/API Key）
 const openaiPassthroughEnabled = ref(false)
+const openAIUserAgent = ref('')
 const openAICompactMode = ref<OpenAICompactMode>('auto')
 const openaiOAuthResponsesWebSocketV2Mode = ref<OpenAIWSMode>(OPENAI_WS_MODE_OFF)
 const openaiAPIKeyResponsesWebSocketV2Mode = ref<OpenAIWSMode>(OPENAI_WS_MODE_OFF)
@@ -2605,6 +2620,7 @@ const syncFormFromAccount = (newAccount: Account | null) => {
 
   // Load OpenAI passthrough toggle (OpenAI OAuth/API Key)
   openaiPassthroughEnabled.value = false
+  openAIUserAgent.value = ''
   openAICompactMode.value = 'auto'
   openAICompactModelMappings.value = []
   openaiOAuthResponsesWebSocketV2Mode.value = OPENAI_WS_MODE_OFF
@@ -2640,6 +2656,9 @@ const syncFormFromAccount = (newAccount: Account | null) => {
       codexCLIOnlyEnabled.value = extra?.codex_cli_only === true
     }
     const credentials = newAccount.credentials as Record<string, unknown> | undefined
+    openAIUserAgent.value = newAccount.type === 'apikey' && typeof credentials?.user_agent === 'string'
+      ? credentials.user_agent
+      : ''
     const compactMappings = credentials?.compact_model_mapping as Record<string, string> | undefined
     if (compactMappings && typeof compactMappings === 'object') {
       openAICompactModelMappings.value = Object.entries(compactMappings).map(([from, to]) => ({ from, to }))
@@ -3399,6 +3418,12 @@ const handleSubmit = async () => {
           newCredentials.compact_model_mapping = compactModelMapping
         } else {
           delete newCredentials.compact_model_mapping
+        }
+        const userAgent = openAIUserAgent.value.trim()
+        if (userAgent) {
+          newCredentials.user_agent = userAgent
+        } else {
+          delete newCredentials.user_agent
         }
       }
 

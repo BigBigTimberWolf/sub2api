@@ -2553,6 +2553,20 @@
 
       <!-- OpenAI WS Mode 三态（off/ctx_pool/passthrough） -->
       <div
+        v-if="form.platform === 'openai' && accountCategory === 'apikey'"
+        class="border-t border-gray-200 pt-4 dark:border-dark-600"
+      >
+        <label class="input-label">{{ t('admin.accounts.openai.userAgent') }}</label>
+        <input
+          v-model="openAIUserAgent"
+          type="text"
+          class="input"
+          :placeholder="t('admin.accounts.openai.userAgentPlaceholder')"
+        />
+        <p class="input-hint">{{ t('admin.accounts.openai.userAgentDesc') }}</p>
+      </div>
+
+      <div
         v-if="form.platform === 'openai' && (accountCategory === 'oauth-based' || accountCategory === 'apikey')"
         class="border-t border-gray-200 pt-4 dark:border-dark-600"
       >
@@ -3322,6 +3336,7 @@ const customErrorCodeInput = ref<number | null>(null)
 const interceptWarmupRequests = ref(false)
 const autoPauseOnExpired = ref(true)
 const openaiPassthroughEnabled = ref(false)
+const openAIUserAgent = ref('')
 const openAICompactMode = ref<OpenAICompactMode>('auto')
 const openaiOAuthResponsesWebSocketV2Mode = ref<OpenAIWSMode>(OPENAI_WS_MODE_OFF)
 const openaiAPIKeyResponsesWebSocketV2Mode = ref<OpenAIWSMode>(OPENAI_WS_MODE_OFF)
@@ -3698,6 +3713,7 @@ watch(
     }
     if (newPlatform !== 'openai') {
       openaiPassthroughEnabled.value = false
+      openAIUserAgent.value = ''
       openaiOAuthResponsesWebSocketV2Mode.value = OPENAI_WS_MODE_OFF
       openaiAPIKeyResponsesWebSocketV2Mode.value = OPENAI_WS_MODE_OFF
       codexCLIOnlyEnabled.value = false
@@ -4094,6 +4110,7 @@ const resetForm = () => {
   interceptWarmupRequests.value = false
   autoPauseOnExpired.value = true
   openaiPassthroughEnabled.value = false
+  openAIUserAgent.value = ''
   openAICompactMode.value = 'auto'
   openaiOAuthResponsesWebSocketV2Mode.value = OPENAI_WS_MODE_OFF
   openaiAPIKeyResponsesWebSocketV2Mode.value = OPENAI_WS_MODE_OFF
@@ -4468,6 +4485,10 @@ const handleSubmit = async () => {
     const compactModelMapping = buildOpenAICompactModelMapping()
     if (compactModelMapping) {
       credentials.compact_model_mapping = compactModelMapping
+    }
+    const userAgent = openAIUserAgent.value.trim()
+    if (accountCategory.value === 'apikey' && userAgent) {
+      credentials.user_agent = userAgent
     }
   }
 
