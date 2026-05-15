@@ -47,6 +47,8 @@ const (
 
 	// providerOpenAIPath OpenAI Chat Completions 路径。
 	providerOpenAIPath = "/v1/chat/completions"
+	// providerOpenAIResponsesPath OpenAI Responses 路径。
+	providerOpenAIResponsesPath = "/v1/responses"
 	// providerAnthropicPath Anthropic Messages 路径。
 	providerAnthropicPath = "/v1/messages"
 	// providerGeminiPathTemplate Gemini generateContent 路径模板（含 model 占位）。

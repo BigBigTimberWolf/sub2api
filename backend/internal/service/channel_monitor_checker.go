@@ -157,7 +157,7 @@ type providerAdapter struct {
 	buildPath    func(model string) string
 	buildBody    func(model, prompt string) ([]byte, error)
 	buildHeaders func(apiKey string) map[string]string
-	textPath     string // gjson 提取响应文本的 path
+	extractText  func(model string, respBytes []byte) string
 }
 
 // providerAdapters 全部已支持的 provider。键值即 MonitorProvider* 字符串。
@@ -165,19 +165,12 @@ type providerAdapter struct {
 //nolint:gochecknoglobals // 适配器表是只读静态数据，初始化后不变更。
 var providerAdapters = map[string]providerAdapter{
 	MonitorProviderOpenAI: {
-		buildPath: func(string) string { return providerOpenAIPath },
-		buildBody: func(model, prompt string) ([]byte, error) {
-			return json.Marshal(map[string]any{
-				"model":      model,
-				"messages":   []map[string]string{{"role": "user", "content": prompt}},
-				"max_tokens": monitorChallengeMaxTokens,
-				"stream":     false,
-			})
-		},
+		buildPath: buildOpenAIChannelMonitorPath,
+		buildBody: buildOpenAIChannelMonitorBody,
 		buildHeaders: func(apiKey string) map[string]string {
 			return map[string]string{"Authorization": "Bearer " + apiKey}
 		},
-		textPath: "choices.0.message.content",
+		extractText: extractOpenAIChannelMonitorText,
 	},
 	MonitorProviderAnthropic: {
 		buildPath: func(string) string { return providerAnthropicPath },
@@ -194,7 +187,9 @@ var providerAdapters = map[string]providerAdapter{
 				"anthropic-version": monitorAnthropicAPIVersion,
 			}
 		},
-		textPath: "content.0.text",
+		extractText: func(_ string, respBytes []byte) string {
+			return gjson.GetBytes(respBytes, "content.0.text").String()
+		},
 	},
 	MonitorProviderGemini: {
 		// Gemini 把 model 名写在 URL path 上：/v1beta/models/{model}:generateContent
@@ -211,7 +206,9 @@ var providerAdapters = map[string]providerAdapter{
 		buildHeaders: func(apiKey string) map[string]string {
 			return map[string]string{"x-goog-api-key": apiKey}
 		},
-		textPath: "candidates.0.content.parts.0.text",
+		extractText: func(_ string, respBytes []byte) string {
+			return gjson.GetBytes(respBytes, "candidates.0.content.parts.0.text").String()
+		},
 	},
 }
 
@@ -245,7 +242,7 @@ func callProvider(ctx context.Context, provider, endpoint, apiKey, model, prompt
 	if err != nil {
 		return "", "", status, err
 	}
-	return gjson.GetBytes(respBytes, adapter.textPath).String(), string(respBytes), status, nil
+	return adapter.extractText(model, respBytes), string(respBytes), status, nil
 }
 
 // mergeHeaders 把用户自定义 headers 合并到 adapter 默认 headers 上。
@@ -321,7 +318,7 @@ func buildRequestBody(adapter providerAdapter, provider, model, prompt string, o
 //
 //nolint:gochecknoglobals // 静态查表，初始化后不变。
 var bodyMergeKeyDenyList = map[string]map[string]bool{
-	MonitorProviderOpenAI:    {"model": true, "messages": true, "stream": true},
+	MonitorProviderOpenAI:    {"model": true, "messages": true, "input": true, "stream": true},
 	MonitorProviderAnthropic: {"model": true, "messages": true},
 	MonitorProviderGemini:    {"contents": true},
 }
