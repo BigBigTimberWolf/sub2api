@@ -911,7 +911,7 @@ func (s *defaultOpenAIAccountScheduler) isAccountRequestCompatible(ctx context.C
 	if account == nil {
 		return false
 	}
-	if req.RequestedModel != "" && !account.IsModelSupported(req.RequestedModel) {
+	if req.RequestedModel != "" && !isOpenAICompatAccountModelSupportedForSelection(ctx, account, req.RequestedModel, req.Platform) {
 		return false
 	}
 	if req.GroupID != nil && s != nil && s.service != nil &&
@@ -1146,7 +1146,7 @@ func (s *OpenAIGatewayService) selectAccountWithScheduler(
 
 	return scheduler.Select(ctx, OpenAIAccountScheduleRequest{
 		GroupID:                 groupID,
-		Platform:                s.resolveOpenAISelectionPlatform(ctx, groupID),
+		Platform:                s.resolveOpenAIRequestPlatform(ctx, groupID, requestedModel),
 		SessionHash:             sessionHash,
 		StickyAccountID:         stickyAccountID,
 		PreviousResponseID:      previousResponseID,

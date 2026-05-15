@@ -502,6 +502,32 @@ func TestResolveOpenAIMessagesDispatchMappedModel(t *testing.T) {
 	})
 }
 
+func TestResolveOpenAIMessagesDispatchTarget(t *testing.T) {
+	t.Run("returns_model_and_platform_for_exact_mapping", func(t *testing.T) {
+		apiKey := &service.APIKey{
+			Group: &service.Group{
+				MessagesDispatchModelConfig: service.OpenAIMessagesDispatchModelConfig{
+					ExactModelMappings: map[string]string{
+						"claude-sonnet-4-5-20250929": "gpt-5.4-high",
+					},
+					ExactModelMappingPlatforms: map[string]string{
+						"claude-sonnet-4-5-20250929": service.PlatformNvidia,
+					},
+				},
+			},
+		}
+
+		target := resolveOpenAIMessagesDispatchTarget(apiKey, "claude-sonnet-4-5-20250929")
+		require.Equal(t, "gpt-5.4", target.Model)
+		require.Equal(t, service.PlatformNvidia, target.Platform)
+	})
+
+	t.Run("returns_zero_target_when_group_missing", func(t *testing.T) {
+		require.Equal(t, service.OpenAICompatRoutingTarget{}, resolveOpenAIMessagesDispatchTarget(nil, "claude-sonnet-4-5-20250929"))
+		require.Equal(t, service.OpenAICompatRoutingTarget{}, resolveOpenAIMessagesDispatchTarget(&service.APIKey{}, "claude-sonnet-4-5-20250929"))
+	})
+}
+
 func TestOpenAIResponses_MissingDependencies_ReturnsServiceUnavailable(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 

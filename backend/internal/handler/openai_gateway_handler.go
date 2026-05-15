@@ -125,11 +125,15 @@ func (h *OpenAIGatewayHandler) Models(c *gin.Context) {
 	})
 }
 
-func resolveOpenAIMessagesDispatchMappedModel(apiKey *service.APIKey, requestedModel string) string {
+func resolveOpenAIMessagesDispatchTarget(apiKey *service.APIKey, requestedModel string) service.OpenAICompatRoutingTarget {
 	if apiKey == nil || apiKey.Group == nil {
-		return ""
+		return service.OpenAICompatRoutingTarget{}
 	}
-	return strings.TrimSpace(apiKey.Group.ResolveMessagesDispatchModel(requestedModel))
+	return apiKey.Group.ResolveMessagesDispatchTarget(requestedModel)
+}
+
+func resolveOpenAIMessagesDispatchMappedModel(apiKey *service.APIKey, requestedModel string) string {
+	return strings.TrimSpace(resolveOpenAIMessagesDispatchTarget(apiKey, requestedModel).Model)
 }
 
 // NewOpenAIGatewayHandler creates a new OpenAIGatewayHandler
@@ -689,10 +693,11 @@ func (h *OpenAIGatewayHandler) Messages(c *gin.Context) {
 	}
 	reqModel := modelResult.String()
 	routingModel := service.NormalizeOpenAICompatRequestedModel(reqModel)
-	preferredMappedModel := ""
+	dispatchTarget := service.OpenAICompatRoutingTarget{}
 	if !isNvidia {
-		preferredMappedModel = resolveOpenAIMessagesDispatchMappedModel(apiKey, reqModel)
+		dispatchTarget = resolveOpenAIMessagesDispatchTarget(apiKey, reqModel)
 	}
+	preferredMappedModel := strings.TrimSpace(dispatchTarget.Model)
 	reqStream := gjson.GetBytes(body, "stream").Bool()
 
 	reqLog = reqLog.With(zap.String("model", reqModel), zap.Bool("stream", reqStream))
@@ -758,6 +763,13 @@ func (h *OpenAIGatewayHandler) Messages(c *gin.Context) {
 	sameAccountRetryCount := make(map[int64]int)
 	var lastFailoverErr *service.UpstreamFailoverError
 	effectiveMappedModel := preferredMappedModel
+	selectionCtx := c.Request.Context()
+	if forcedPlatform := strings.TrimSpace(dispatchTarget.Platform); forcedPlatform != "" {
+		selectionCtx = context.WithValue(selectionCtx, ctxkey.ForcePlatform, forcedPlatform)
+		if c != nil && c.Request != nil {
+			c.Request = c.Request.WithContext(selectionCtx)
+		}
+	}
 
 	for {
 		currentRoutingModel := routingModel
@@ -766,7 +778,7 @@ func (h *OpenAIGatewayHandler) Messages(c *gin.Context) {
 		}
 		reqLog.Debug("openai_messages.account_selecting", zap.Int("excluded_account_count", len(failedAccountIDs)))
 		selection, scheduleDecision, err := h.gatewayService.SelectAccountWithScheduler(
-			c.Request.Context(),
+			selectionCtx,
 			apiKey.GroupID,
 			"", // no previous_response_id
 			sessionHash,
