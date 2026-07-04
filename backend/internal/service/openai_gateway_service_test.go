@@ -2492,3 +2492,21 @@ func TestOpenAIGatewayServiceGetAvailableModels_MergesOpenAIAndNvidiaMappings(t 
 	models := svc.GetAvailableModels(context.Background(), &groupID, PlatformOpenAI)
 	require.Equal(t, []string{"gpt-5.4", "z-ai/glm-5.2"}, models)
 }
+
+func TestOpenAIGatewayServiceListSchedulableAccounts_NvidiaGroupUsesOpenAICompatPool(t *testing.T) {
+	groupID := int64(9)
+	svc := &OpenAIGatewayService{
+		accountRepo: stubOpenAIAccountRepo{
+			accounts: []Account{
+				{ID: 1, Platform: PlatformOpenAI},
+				{ID: 2, Platform: PlatformNvidia},
+				{ID: 3, Platform: PlatformGemini},
+			},
+		},
+	}
+
+	accounts, err := svc.listSchedulableAccounts(context.Background(), &groupID, PlatformNvidia)
+	require.NoError(t, err)
+	require.Len(t, accounts, 2)
+	require.ElementsMatch(t, []string{PlatformOpenAI, PlatformNvidia}, []string{accounts[0].Platform, accounts[1].Platform})
+}

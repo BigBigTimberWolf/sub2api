@@ -87,6 +87,9 @@ const isSearchable = computed(() => {
   return props.searchable
 })
 
+const isOpenAICompatiblePlatform = (platform?: GroupPlatform | AccountPlatform) =>
+  platform === 'openai' || platform === 'nvidia'
+
 // Filter groups by platform if specified
 const filteredGroups = computed(() => {
   let result: AdminGroup[] = props.groups
@@ -96,8 +99,8 @@ const filteredGroups = computed(() => {
       result = result.filter(
         (g) => g.platform === 'antigravity' || g.platform === 'anthropic' || g.platform === 'gemini'
       )
-    } else if (props.platform === 'nvidia') {
-      result = result.filter((g) => g.platform === 'nvidia' || props.modelValue.includes(g.id))
+    } else if (isOpenAICompatiblePlatform(props.platform)) {
+      result = result.filter((g) => isOpenAICompatiblePlatform(g.platform))
     } else {
       // 默认：只能选择同 platform 的分组
       result = result.filter((g) => g.platform === props.platform)

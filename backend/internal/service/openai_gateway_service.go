@@ -449,6 +449,14 @@ func normalizeOpenAISelectionPlatform(platform string) string {
 	return platform
 }
 
+func openAICompatSelectionQueryPlatform(groupID *int64, platform string) string {
+	normalized := normalizeOpenAISelectionPlatform(platform)
+	if groupID != nil && (normalized == PlatformOpenAI || normalized == PlatformNvidia) {
+		return PlatformOpenAI
+	}
+	return normalized
+}
+
 func isOpenAISelectionAccountPlatformCompatible(account *Account, platform string) bool {
 	if account == nil {
 		return false
@@ -471,7 +479,7 @@ func (s *OpenAIGatewayService) resolveOpenAISelectionPlatform(ctx context.Contex
 	}
 	if s != nil && s.schedulerSnapshot != nil && groupID != nil {
 		if group, err := s.schedulerSnapshot.GetGroupByID(ctx, *groupID); err == nil && group != nil {
-			return normalizeOpenAISelectionPlatform(group.Platform)
+			return openAICompatSelectionQueryPlatform(groupID, group.Platform)
 		}
 	}
 	return PlatformOpenAI
@@ -1896,6 +1904,7 @@ func (s *OpenAIGatewayService) selectAccountWithLoadAwareness(ctx context.Contex
 }
 
 func (s *OpenAIGatewayService) listSchedulableAccounts(ctx context.Context, groupID *int64, platform string) ([]Account, error) {
+	platform = openAICompatSelectionQueryPlatform(groupID, platform)
 	if s.schedulerSnapshot != nil {
 		accounts, _, err := s.schedulerSnapshot.ListSchedulableAccounts(ctx, groupID, platform, false)
 		return accounts, err
@@ -1924,10 +1933,7 @@ func (s *OpenAIGatewayService) listSchedulableAccounts(ctx context.Context, grou
 }
 
 func (s *OpenAIGatewayService) GetAvailableModels(ctx context.Context, groupID *int64, platform string) []string {
-	normalizedPlatform := strings.TrimSpace(platform)
-	if normalizedPlatform == "" {
-		normalizedPlatform = PlatformOpenAI
-	}
+	normalizedPlatform := openAICompatSelectionQueryPlatform(groupID, platform)
 
 	accounts, err := s.listSchedulableAccounts(ctx, groupID, normalizedPlatform)
 	if err != nil || len(accounts) == 0 {

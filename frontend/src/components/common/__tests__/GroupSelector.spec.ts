@@ -1,5 +1,5 @@
 import { mount } from '@vue/test-utils'
-import { describe, expect, it } from 'vitest'
+import { describe, expect, it, vi } from 'vitest'
 import GroupSelector from '../GroupSelector.vue'
 
 vi.mock('vue-i18n', () => ({
@@ -13,7 +13,7 @@ vi.mock('vue-i18n', () => ({
 }))
 
 describe('GroupSelector', () => {
-  it('nvidia 账号只显示 nvidia 分组', () => {
+  it('nvidia 账号可选择 openai 和 nvidia 分组', () => {
     const wrapper = mount(GroupSelector, {
       props: {
         modelValue: [],
@@ -37,16 +37,15 @@ describe('GroupSelector', () => {
     })
 
     const labels = wrapper.findAll('.group-badge').map((node) => node.text())
-    expect(labels).toEqual(['nvidia-default'])
-    expect(wrapper.text()).not.toContain('openai-default')
+    expect(labels).toEqual(['nvidia-default', 'openai-default'])
     expect(wrapper.text()).not.toContain('gemini-default')
   })
 
-  it('nvidia 账号编辑时保留已选的 legacy openai 分组可见', () => {
+  it('openai 账号可选择 openai 和 nvidia 分组', () => {
     const wrapper = mount(GroupSelector, {
       props: {
-        modelValue: [2],
-        platform: 'nvidia',
+        modelValue: [],
+        platform: 'openai',
         searchable: false,
         groups: [
           { id: 1, name: 'nvidia-default', platform: 'nvidia', rate_multiplier: 1, subscription_type: 'standard', account_count: 2 },
