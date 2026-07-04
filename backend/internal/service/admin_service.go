@@ -363,6 +363,24 @@ type UserGroupRPMStatus struct {
 	Source    string `json:"source"` // "group" | "override"
 }
 
+func isOpenAICompatibleAdminPlatform(platform string) bool {
+	switch strings.ToLower(strings.TrimSpace(platform)) {
+	case PlatformOpenAI, PlatformNvidia:
+		return true
+	default:
+		return false
+	}
+}
+
+func isCompatibleSourceGroupPlatform(targetPlatform, sourcePlatform string) bool {
+	target := strings.ToLower(strings.TrimSpace(targetPlatform))
+	source := strings.ToLower(strings.TrimSpace(sourcePlatform))
+	if target == source {
+		return true
+	}
+	return isOpenAICompatibleAdminPlatform(target) && isOpenAICompatibleAdminPlatform(source)
+}
+
 // BulkUpdateAccountsResult is the aggregated response for bulk updates.
 type BulkUpdateAccountsResult struct {
 	Success    int                       `json:"success"`
@@ -1647,7 +1665,7 @@ func (s *adminServiceImpl) CreateGroup(ctx context.Context, input *CreateGroupIn
 			if err != nil {
 				return nil, fmt.Errorf("source group %d not found: %w", srcGroupID, err)
 			}
-			if srcGroup.Platform != platform {
+			if !isCompatibleSourceGroupPlatform(platform, srcGroup.Platform) {
 				return nil, fmt.Errorf("source group %d platform mismatch: expected %s, got %s", srcGroupID, platform, srcGroup.Platform)
 			}
 		}
@@ -1971,7 +1989,7 @@ func (s *adminServiceImpl) UpdateGroup(ctx context.Context, id int64, input *Upd
 			if err != nil {
 				return nil, fmt.Errorf("source group %d not found: %w", srcGroupID, err)
 			}
-			if srcGroup.Platform != group.Platform {
+			if !isCompatibleSourceGroupPlatform(group.Platform, srcGroup.Platform) {
 				return nil, fmt.Errorf("source group %d platform mismatch: expected %s, got %s", srcGroupID, group.Platform, srcGroup.Platform)
 			}
 		}
@@ -2159,6 +2177,9 @@ func (s *adminServiceImpl) AdminUpdateAPIKeyGroupID(ctx context.Context, keyID i
 		}
 		if group.Status != StatusActive {
 			return nil, infraerrors.BadRequest("GROUP_NOT_ACTIVE", "target group is not active")
+		}
+		if isOpenAICompatibleAdminPlatform(group.Platform) && group.AccountCount == 0 && group.ActiveAccountCount == 0 {
+			return nil, infraerrors.BadRequest("GROUP_HAS_NO_SCHEDULABLE_ACCOUNTS", "target group has no schedulable openai-compatible accounts")
 		}
 		// 订阅类型分组：用户须持有该分组的有效订阅才可绑定
 		if group.IsSubscriptionType() {

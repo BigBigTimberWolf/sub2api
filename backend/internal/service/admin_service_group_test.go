@@ -991,3 +991,10 @@ func TestAdminService_UpdateGroup_InvalidRequestFallbackAllowsAntigravity(t *tes
 	require.NotNil(t, repo.updated)
 	require.Equal(t, fallbackID, *repo.updated.FallbackGroupIDOnInvalidRequest)
 }
+
+func TestIsCompatibleSourceGroupPlatform_AllowsOpenAIAndNvidiaMix(t *testing.T) {
+	require.True(t, isCompatibleSourceGroupPlatform(PlatformOpenAI, PlatformNvidia))
+	require.True(t, isCompatibleSourceGroupPlatform(PlatformNvidia, PlatformOpenAI))
+	require.True(t, isCompatibleSourceGroupPlatform(PlatformOpenAI, PlatformOpenAI))
+	require.False(t, isCompatibleSourceGroupPlatform(PlatformOpenAI, PlatformAnthropic))
+}

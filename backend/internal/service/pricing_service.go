@@ -50,6 +50,14 @@ var (
 		Mode:                    "chat",
 		SupportsPromptCaching:   true,
 	}
+	zAIGLM52FallbackPricing = &LiteLLMModelPricing{
+		InputCostPerToken:       1.4e-06,
+		OutputCostPerToken:      4.4e-06,
+		CacheReadInputTokenCost: 2.6e-07,
+		LiteLLMProvider:         "nvidia",
+		Mode:                    "chat",
+		SupportsPromptCaching:   true,
+	}
 )
 
 // LiteLLMModelPricing LiteLLM价格数据结构
@@ -572,7 +580,19 @@ func (s *PricingService) GetModelPricing(modelName string) *LiteLLMModelPricing 
 	if strings.HasPrefix(lookupCandidates[0], "gpt-") {
 		return s.matchOpenAIModel(lookupCandidates[0])
 	}
+	if pricing := s.matchOpenAICompatibleProviderModel(lookupCandidates[0]); pricing != nil {
+		return pricing
+	}
 
+	return nil
+}
+
+func (s *PricingService) matchOpenAICompatibleProviderModel(model string) *LiteLLMModelPricing {
+	if strings.HasPrefix(model, "z-ai/glm-5.2") {
+		logger.With(zap.String("component", "service.pricing")).
+			Info(fmt.Sprintf("[Pricing] OpenAI-compatible fallback matched %s -> %s", model, "z-ai/glm-5.2(static)"))
+		return zAIGLM52FallbackPricing
+	}
 	return nil
 }
 

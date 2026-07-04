@@ -94,6 +94,15 @@ func TestOpenAIHandleStreamingAwareError_JSONEscaping(t *testing.T) {
 	}
 }
 
+func TestOpenAICompatibleModelsFromIDs_MarksNvidiaModelsInMixedOpenAIGroup(t *testing.T) {
+	models := openAICompatibleModelsFromIDs([]string{"gpt-5.4", "z-ai/glm-5.2"}, service.PlatformOpenAI)
+	require.Len(t, models, 2)
+	require.Equal(t, "gpt-5.4", models[0].ID)
+	require.Equal(t, "openai", models[0].OwnedBy)
+	require.Equal(t, "z-ai/glm-5.2", models[1].ID)
+	require.Equal(t, "nvidia", models[1].OwnedBy)
+}
+
 func TestResolveOpenAIMessagesMetadataSession_DoesNotDerivePromptCacheKey(t *testing.T) {
 	body := []byte(`{"model":"claude-sonnet-4-5","metadata":{"user_id":"claude-code-session"},"messages":[{"role":"user","content":"hello"}]}`)
 

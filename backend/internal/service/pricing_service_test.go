@@ -216,3 +216,14 @@ func TestParsePricingData_PreservesServiceTierPriorityFields(t *testing.T) {
 	require.InDelta(t, 0.0000005, pricing.CacheReadInputTokenCostPriority, 1e-12)
 	require.True(t, pricing.SupportsServiceTier)
 }
+
+func TestGetModelPricing_ZAIGLM52UsesStaticFallback(t *testing.T) {
+	svc := &PricingService{pricingData: map[string]*LiteLLMModelPricing{}}
+
+	got := svc.GetModelPricing("z-ai/glm-5.2")
+	require.NotNil(t, got)
+	require.InDelta(t, 1.4e-6, got.InputCostPerToken, 1e-12)
+	require.InDelta(t, 4.4e-6, got.OutputCostPerToken, 1e-12)
+	require.InDelta(t, 2.6e-7, got.CacheReadInputTokenCost, 1e-12)
+	require.Equal(t, "nvidia", got.LiteLLMProvider)
+}

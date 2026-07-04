@@ -111,12 +111,24 @@ func (h *OpenAIGatewayHandler) CountTokens(c *gin.Context) {
 func (h *OpenAIGatewayHandler) Models(c *gin.Context) {
 	apiKey, _ := middleware2.GetAPIKeyFromContext(c)
 
+	var groupID *int64
 	platform := ""
 	if apiKey != nil && apiKey.Group != nil {
+		groupID = &apiKey.Group.ID
 		platform = strings.TrimSpace(apiKey.Group.Platform)
 	}
 	if forcedPlatform, ok := middleware2.GetForcePlatformFromContext(c); ok && strings.TrimSpace(forcedPlatform) != "" {
 		platform = strings.TrimSpace(forcedPlatform)
+	}
+
+	if h != nil && h.gatewayService != nil {
+		if availableModels := h.gatewayService.GetAvailableModels(c.Request.Context(), groupID, platform); len(availableModels) > 0 {
+			c.JSON(http.StatusOK, gin.H{
+				"object": "list",
+				"data":   openAICompatibleModelsFromIDs(availableModels, platform),
+			})
+			return
+		}
 	}
 
 	c.JSON(http.StatusOK, gin.H{
@@ -1174,6 +1186,10 @@ func openAICompatibleModelsFromIDs(ids []string, platform string) []openai.Model
 	for _, id := range ids {
 		trimmed := strings.TrimSpace(id)
 		if trimmed == "" {
+			continue
+		}
+		if service.OpenAICompatKnownPlatformForModel(trimmed) == service.PlatformNvidia {
+			models = append(models, service.NvidiaModelForID(trimmed))
 			continue
 		}
 		if model, ok := defaultByID[trimmed]; ok {

@@ -34,7 +34,7 @@ func openAICompatRequestedModelFamily(requestedModel string) string {
 	switch {
 	case isOpenAIImageGenerationModel(lower):
 		return PlatformOpenAI
-	case strings.HasPrefix(lower, "meta/"), strings.HasPrefix(lower, "nvidia/"):
+	case strings.HasPrefix(lower, "meta/"), strings.HasPrefix(lower, "nvidia/"), strings.HasPrefix(lower, "z-ai/"):
 		return PlatformNvidia
 	}
 
@@ -64,7 +64,7 @@ func openAICompatKnownPlatformForModel(requestedModel string) string {
 	switch {
 	case isOpenAIImageGenerationModel(lower):
 		return PlatformOpenAI
-	case strings.HasPrefix(lower, "meta/"), strings.HasPrefix(lower, "nvidia/"):
+	case strings.HasPrefix(lower, "meta/"), strings.HasPrefix(lower, "nvidia/"), strings.HasPrefix(lower, "z-ai/"):
 		return PlatformNvidia
 	}
 
@@ -80,6 +80,10 @@ func openAICompatKnownPlatformForModel(requestedModel string) string {
 	}
 
 	return openAICompatRequestedModelFamily(normalized)
+}
+
+func OpenAICompatKnownPlatformForModel(requestedModel string) string {
+	return openAICompatKnownPlatformForModel(requestedModel)
 }
 
 func openAICompatAccountHasExplicitModelSupport(account *Account, requestedModel string) bool {

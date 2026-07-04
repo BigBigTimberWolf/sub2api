@@ -2461,3 +2461,34 @@ func TestHandleSSEToJSON_ResponseFailedReturnsProtocolError(t *testing.T) {
 	require.Contains(t, rec.Body.String(), "upstream rejected request")
 	require.Contains(t, rec.Header().Get("Content-Type"), "application/json")
 }
+
+func TestOpenAIGatewayServiceGetAvailableModels_MergesOpenAIAndNvidiaMappings(t *testing.T) {
+	groupID := int64(7)
+	svc := &OpenAIGatewayService{
+		accountRepo: stubOpenAIAccountRepo{
+			accounts: []Account{
+				{
+					ID:       1,
+					Platform: PlatformOpenAI,
+					Credentials: map[string]any{
+						"model_mapping": map[string]any{
+							"gpt-5.4": "gpt-5.4",
+						},
+					},
+				},
+				{
+					ID:       2,
+					Platform: PlatformNvidia,
+					Credentials: map[string]any{
+						"model_mapping": map[string]any{
+							"z-ai/glm-5.2": "z-ai/glm-5.2",
+						},
+					},
+				},
+			},
+		},
+	}
+
+	models := svc.GetAvailableModels(context.Background(), &groupID, PlatformOpenAI)
+	require.Equal(t, []string{"gpt-5.4", "z-ai/glm-5.2"}, models)
+}

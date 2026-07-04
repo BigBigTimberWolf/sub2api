@@ -1923,6 +1923,74 @@ func (s *OpenAIGatewayService) listSchedulableAccounts(ctx context.Context, grou
 	return accounts, nil
 }
 
+func (s *OpenAIGatewayService) GetAvailableModels(ctx context.Context, groupID *int64, platform string) []string {
+	normalizedPlatform := strings.TrimSpace(platform)
+	if normalizedPlatform == "" {
+		normalizedPlatform = PlatformOpenAI
+	}
+
+	accounts, err := s.listSchedulableAccounts(ctx, groupID, normalizedPlatform)
+	if err != nil || len(accounts) == 0 {
+		return nil
+	}
+
+	modelSet := make(map[string]struct{})
+	hasAnyMapping := false
+	hasOpenAIAccount := false
+	hasNvidiaAccount := false
+
+	for _, account := range accounts {
+		switch account.Platform {
+		case PlatformOpenAI:
+			hasOpenAIAccount = true
+		case PlatformNvidia:
+			hasNvidiaAccount = true
+		}
+
+		mapping := account.GetModelMapping()
+		if len(mapping) == 0 {
+			continue
+		}
+		hasAnyMapping = true
+		for model := range mapping {
+			trimmed := strings.TrimSpace(model)
+			if trimmed != "" {
+				modelSet[trimmed] = struct{}{}
+			}
+		}
+	}
+
+	if !hasAnyMapping {
+		if normalizedPlatform == PlatformNvidia || (!hasOpenAIAccount && hasNvidiaAccount) {
+			for _, model := range DefaultNvidiaModels {
+				modelSet[model.ID] = struct{}{}
+			}
+		} else {
+			if hasOpenAIAccount {
+				for _, model := range openai.DefaultModels {
+					modelSet[model.ID] = struct{}{}
+				}
+			}
+			if hasNvidiaAccount {
+				for _, model := range DefaultNvidiaModels {
+					modelSet[model.ID] = struct{}{}
+				}
+			}
+		}
+	}
+
+	if len(modelSet) == 0 {
+		return nil
+	}
+
+	models := make([]string, 0, len(modelSet))
+	for model := range modelSet {
+		models = append(models, model)
+	}
+	sort.Strings(models)
+	return models
+}
+
 func (s *OpenAIGatewayService) tryAcquireAccountSlot(ctx context.Context, accountID int64, maxConcurrency int) (*AcquireResult, error) {
 	if s.concurrencyService == nil {
 		return &AcquireResult{Acquired: true, ReleaseFunc: func() {}}, nil
